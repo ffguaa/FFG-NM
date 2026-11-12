@@ -1,0 +1,219 @@
+import React, { useState, useEffect, useCallback } from 'react';
+import { supabase, testSupabaseConnection, ConnectionStatus } from './lib/supabase';
+import { ToastProvider, useToast } from './context/ToastContext';
+import { Header } from './components/Header';
+import { Sidebar } from './components/Sidebar';
+import { ExecutiveDashboard } from './components/ExecutiveDashboard';
+import { YieldForm } from './components/YieldForm';
+import { MaintenanceForm } from './components/MaintenanceForm';
+import { SkuManagementModal } from './components/SkuManagementModal';
+import { SpreadsheetHelpModal } from './components/SpreadsheetHelpModal';
+import { FfgSku, FfgYieldRecord, FfgDowntime } from './types';
+import { RefreshCw, AlertOctagon } from 'lucide-react';
+
+function AppContent() {
+  const { showSupabaseError, showToast } = useToast();
+
+  const [activeTab, setActiveTab] = useState<'dashboard' | 'yield' | 'maintenance'>('dashboard');
+
+  // Supabase Data States
+  const [skus, setSkus] = useState<FfgSku[]>([]);
+  const [yieldRecords, setYieldRecords] = useState<FfgYieldRecord[]>([]);
+  const [downtimes, setDowntimes] = useState<FfgDowntime[]>([]);
+
+  // Connectivity State
+  const [connectionStatus, setConnectionStatus] = useState<ConnectionStatus>({
+    connected: false,
+    checking: true,
+  });
+
+  // Modals
+  const [isSkuModalOpen, setIsSkuModalOpen] = useState(false);
+  const [isHelpModalOpen, setIsHelpModalOpen] = useState(false);
+
+  // Initial loading
+  const [initialLoading, setInitialLoading] = useState(true);
+
+  // Probe Supabase Connectivity
+  const verifyConnection = useCallback(async () => {
+    setConnectionStatus((prev) => ({ ...prev, checking: true }));
+    const result = await testSupabaseConnection();
+    setConnectionStatus({
+      connected: result.ok,
+      checking: false,
+      errorMessage: result.message,
+      latencyMs: result.latency,
+    });
+    if (!result.ok && result.message) {
+      showSupabaseError('Falha de Conexão com Supabase', result.message);
+    }
+  }, [showSupabaseError]);
+
+  // Load SKUs
+  const fetchSkus = useCallback(async () => {
+    try {
+      const { data, error } = await supabase
+        .from('ffg_skus')
+        .select('*')
+        .order('produto', { ascending: true });
+
+      if (error) throw error;
+      setSkus(data || []);
+    } catch (err: any) {
+      showSupabaseError('Erro ao Carregar SKUs (ffg_skus)', err);
+    }
+  }, [showSupabaseError]);
+
+  // Load Yield Records
+  const fetchYieldRecords = useCallback(async () => {
+    try {
+      const { data, error } = await supabase
+        .from('ffg_yield_records')
+        .select('*')
+        .order('production_date', { ascending: false });
+
+      if (error) throw error;
+      setYieldRecords(data || []);
+    } catch (err: any) {
+      showSupabaseError('Erro ao Carregar Rendimentos (ffg_yield_records)', err);
+    }
+  }, [showSupabaseError]);
+
+  // Load Downtimes
+  const fetchDowntimes = useCallback(async () => {
+    try {
+      const { data, error } = await supabase
+        .from('ffg_downtimes')
+        .select('*')
+        .order('start_datetime', { ascending: false });
+
+      if (error) throw error;
+      setDowntimes(data || []);
+    } catch (err: any) {
+      showSupabaseError('Erro ao Carregar Paradas (ffg_downtimes)', err);
+    }
+  }, [showSupabaseError]);
+
+  // Reload all data
+  const reloadAll = useCallback(async () => {
+    await Promise.all([
+      verifyConnection(),
+      fetchSkus(),
+      fetchYieldRecords(),
+      fetchDowntimes(),
+    ]);
+  }, [verifyConnection, fetchSkus, fetchYieldRecords, fetchDowntimes]);
+
+  useEffect(() => {
+    const init = async () => {
+      setInitialLoading(true);
+      await reloadAll();
+      setInitialLoading(false);
+    };
+    init();
+  }, []);
+
+  return (
+    <div className="min-h-screen bg-slate-950 text-slate-100 flex flex-col font-sans selection:bg-emerald-500 selection:text-slate-950">
+      
+      {/* Top Header */}
+      <Header
+        activeTab={activeTab}
+        onOpenHelp={() => setIsHelpModalOpen(true)}
+        onOpenSkus={() => setIsSkuModalOpen(true)}
+      />
+
+      {/* Main Layout */}
+      <div className="flex-1 flex overflow-hidden">
+        
+        {/* Left Sidebar */}
+        <Sidebar
+          activeTab={activeTab}
+          setActiveTab={setActiveTab}
+          connectionStatus={connectionStatus}
+          onRetryConnection={verifyConnection}
+          onOpenSkus={() => setIsSkuModalOpen(true)}
+          yieldCount={yieldRecords.length}
+          downtimeCount={downtimes.length}
+        />
+
+        {/* Dynamic Content Area */}
+        <main className="flex-1 overflow-y-auto p-6 md:p-8 bg-slate-950/60">
+          <div className="max-w-7xl mx-auto">
+            {initialLoading ? (
+              <div className="flex flex-col items-center justify-center py-32 space-y-4">
+                <div className="relative">
+                  <div className="w-12 h-12 rounded-2xl bg-emerald-500/20 border border-emerald-500/40 flex items-center justify-center animate-spin">
+                    <RefreshCw className="w-6 h-6 text-emerald-400" />
+                  </div>
+                </div>
+                <div className="text-center">
+                  <h3 className="text-sm font-bold text-white uppercase tracking-wider font-mono">
+                    Conectando ao Supabase...
+                  </h3>
+                  <p className="text-xs text-slate-400 mt-1">
+                    Carregando tabelas ffg_skus, ffg_yield_records e ffg_downtimes
+                  </p>
+                </div>
+              </div>
+            ) : (
+              <>
+                {/* Tab 1: Executive Dashboard */}
+                {activeTab === 'dashboard' && (
+                  <ExecutiveDashboard
+                    yieldRecords={yieldRecords}
+                    downtimes={downtimes}
+                    onReload={reloadAll}
+                    onNavigateToYield={() => setActiveTab('yield')}
+                    onNavigateToMaintenance={() => setActiveTab('maintenance')}
+                  />
+                )}
+
+                {/* Tab 2: Yield & Overweight Form */}
+                {activeTab === 'yield' && (
+                  <YieldForm
+                    skus={skus}
+                    onOpenSkus={() => setIsSkuModalOpen(true)}
+                    onRecordSaved={fetchYieldRecords}
+                  />
+                )}
+
+                {/* Tab 3: Maintenance & Downtime Form */}
+                {activeTab === 'maintenance' && (
+                  <MaintenanceForm
+                    downtimes={downtimes}
+                    onReload={fetchDowntimes}
+                  />
+                )}
+              </>
+            )}
+          </div>
+        </main>
+
+      </div>
+
+      {/* Sku Management Modal */}
+      <SkuManagementModal
+        isOpen={isSkuModalOpen}
+        onClose={() => setIsSkuModalOpen(false)}
+        skus={skus}
+        onReload={fetchSkus}
+      />
+
+      {/* Help Modal */}
+      <SpreadsheetHelpModal
+        isOpen={isHelpModalOpen}
+        onClose={() => setIsHelpModalOpen(false)}
+      />
+
+    </div>
+  );
+}
+
+export default function App() {
+  return (
+    <ToastProvider>
+      <AppContent />
+    </ToastProvider>
+  );
+}

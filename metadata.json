@@ -1,0 +1,6 @@
+{
+  "name": "FFG — Controle de Rendimento e Manutenção",
+  "description": "Sistema industrial de controle de rendimento e apontamento de paradas da FFG - União Avícola Agroindustrial.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
