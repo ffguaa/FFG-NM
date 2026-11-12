@@ -70,11 +70,6 @@ export const Sidebar: React.FC<SidebarProps> = ({
                 <div className="text-[10px] font-normal text-slate-400">Importação e Lançamento</div>
               </div>
             </div>
-            {yieldCount > 0 && (
-              <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-emerald-950 border border-emerald-800 text-emerald-400 font-mono">
-                {yieldCount}
-              </span>
-            )}
           </button>
 
           {/* Tab 3 */}
@@ -93,11 +88,6 @@ export const Sidebar: React.FC<SidebarProps> = ({
                 <div className="text-[10px] font-normal text-slate-400">Apontamento Rápido</div>
               </div>
             </div>
-            {downtimeCount > 0 && (
-              <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-amber-950 border border-amber-800 text-amber-400 font-mono">
-                {downtimeCount}
-              </span>
-            )}
           </button>
         </nav>
 

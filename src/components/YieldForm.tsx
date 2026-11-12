@@ -746,32 +746,32 @@ export const YieldForm: React.FC<YieldFormProps> = ({
             </div>
 
             <div className="flex-1 overflow-y-auto p-4">
-              <table className="w-full text-left text-xs">
+              <table className="w-full text-center text-xs">
                 <thead className="bg-slate-950 text-slate-400 uppercase tracking-wider sticky top-0 border-b border-slate-800 font-mono">
                   <tr>
-                    <th className="px-3 py-2">Código SKU</th>
-                    <th className="px-3 py-2">Descrição</th>
-                    <th className="px-3 py-2">Família</th>
-                    <th className="px-3 py-2 text-right">Peso Líquido</th>
-                    <th className="px-3 py-2 text-right">% Sobrepeso</th>
-                    <th className="px-3 py-2 text-right">Desconto (kg)</th>
+                    <th className="px-3 py-2 text-center">Código SKU</th>
+                    <th className="px-3 py-2 text-center">Descrição</th>
+                    <th className="px-3 py-2 text-center">Família</th>
+                    <th className="px-3 py-2 text-center">Peso Líquido</th>
+                    <th className="px-3 py-2 text-center">% Sobrepeso</th>
+                    <th className="px-3 py-2 text-center">Desconto (kg)</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-800/60 font-mono text-slate-200">
                   {detalhesSobrepeso.map((item, idx) => (
                     <tr key={idx} className="hover:bg-slate-800/40">
-                      <td className="px-3 py-2 font-semibold text-sky-400">
+                      <td className="px-3 py-2 text-center font-semibold text-sky-400">
                         {item.codigo_encontrado || item.sku}
                       </td>
-                      <td className="px-3 py-2 font-sans text-white">{item.produto}</td>
-                      <td className="px-3 py-2 text-slate-400">{item.familia || '—'}</td>
-                      <td className="px-3 py-2 text-right font-medium text-slate-300">
+                      <td className="px-3 py-2 text-center font-sans text-white">{item.produto}</td>
+                      <td className="px-3 py-2 text-center text-slate-400">{item.familia || '—'}</td>
+                      <td className="px-3 py-2 text-center font-medium text-slate-300">
                         {item.peso_produzido.toLocaleString('pt-BR', { minimumFractionDigits: 2 })} kg
                       </td>
-                      <td className="px-3 py-2 text-right text-amber-300 font-semibold">
+                      <td className="px-3 py-2 text-center text-amber-300 font-semibold">
                         {((item.percentual <= 1 ? item.percentual * 100 : item.percentual).toFixed(2))}%
                       </td>
-                      <td className="px-3 py-2 text-right font-bold text-amber-400">
+                      <td className="px-3 py-2 text-center font-bold text-amber-400">
                         {item.sobrepeso_kg.toLocaleString('pt-BR', { minimumFractionDigits: 2 })} kg
                       </td>
                     </tr>
@@ -779,12 +779,12 @@ export const YieldForm: React.FC<YieldFormProps> = ({
                 </tbody>
                 <tfoot className="bg-slate-950 text-white font-mono font-bold border-t border-slate-800">
                   <tr>
-                    <td colSpan={3} className="px-3 py-2 text-right uppercase text-slate-400">Total:</td>
-                    <td className="px-3 py-2 text-right text-slate-200">
+                    <td colSpan={3} className="px-3 py-2 text-center uppercase text-slate-400">Total:</td>
+                    <td className="px-3 py-2 text-center text-slate-200">
                       {detalhesSobrepeso.reduce((a, b) => a + b.peso_produzido, 0).toLocaleString('pt-BR', { minimumFractionDigits: 2 })} kg
                     </td>
-                    <td className="px-3 py-2 text-right text-slate-500">—</td>
-                    <td className="px-3 py-2 text-right text-amber-400">
+                    <td className="px-3 py-2 text-center text-slate-500">—</td>
+                    <td className="px-3 py-2 text-center text-amber-400">
                       {detalhesSobrepeso.reduce((a, b) => a + b.sobrepeso_kg, 0).toLocaleString('pt-BR', { minimumFractionDigits: 2 })} kg
                     </td>
                   </tr>

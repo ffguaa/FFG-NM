@@ -380,14 +380,14 @@ export const SkuManagementModal: React.FC<SkuManagementModalProps> = ({
           {/* Table */}
           <div className="border border-slate-800 rounded-xl overflow-hidden bg-slate-950">
             <div className="max-h-72 overflow-y-auto">
-              <table className="w-full text-left text-xs">
+              <table className="w-full text-center text-xs">
                 <thead className="bg-slate-900/90 text-slate-400 uppercase tracking-wider sticky top-0 border-b border-slate-800 font-mono">
                   <tr>
-                    <th className="px-4 py-2.5">SKU União</th>
-                    <th className="px-4 py-2.5">SKU MBRF</th>
-                    <th className="px-4 py-2.5">Produto</th>
-                    <th className="px-4 py-2.5">Família</th>
-                    <th className="px-4 py-2.5 text-right">% Sobrepeso</th>
+                    <th className="px-4 py-2.5 text-center">SKU União</th>
+                    <th className="px-4 py-2.5 text-center">SKU MBRF</th>
+                    <th className="px-4 py-2.5 text-center">Produto</th>
+                    <th className="px-4 py-2.5 text-center">Família</th>
+                    <th className="px-4 py-2.5 text-center">% Sobrepeso</th>
                     <th className="px-4 py-2.5 text-center">Ações</th>
                   </tr>
                 </thead>
@@ -401,11 +401,11 @@ export const SkuManagementModal: React.FC<SkuManagementModalProps> = ({
                   ) : (
                     filteredSkus.map((sku) => (
                       <tr key={sku.id || `${sku.sku_uniao}-${sku.sku_mbrf}`} className="hover:bg-slate-900/40 transition-colors">
-                        <td className="px-4 py-2 text-emerald-400 font-semibold">{sku.sku_uniao || '—'}</td>
-                        <td className="px-4 py-2 text-sky-400">{sku.sku_mbrf || '—'}</td>
-                        <td className="px-4 py-2 font-sans font-medium text-white">{sku.produto}</td>
-                        <td className="px-4 py-2 text-slate-400">{sku.familia || '—'}</td>
-                        <td className="px-4 py-2 text-right font-bold text-amber-300">
+                        <td className="px-4 py-2 text-center text-emerald-400 font-semibold">{sku.sku_uniao || '—'}</td>
+                        <td className="px-4 py-2 text-center text-sky-400">{sku.sku_mbrf || '—'}</td>
+                        <td className="px-4 py-2 text-center font-sans font-medium text-white">{sku.produto}</td>
+                        <td className="px-4 py-2 text-center text-slate-400">{sku.familia || '—'}</td>
+                        <td className="px-4 py-2 text-center font-bold text-amber-300">
                           {formatSobrepesoDisplay(sku.percentual_sobrepeso)}
                         </td>
                         <td className="px-4 py-2 text-center">

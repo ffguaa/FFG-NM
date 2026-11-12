@@ -537,16 +537,16 @@ export const MaintenanceForm: React.FC<MaintenanceFormProps> = ({
 
         {/* Table */}
         <div className="overflow-x-auto">
-          <table className="w-full text-left text-xs">
+          <table className="w-full text-center text-xs">
             <thead className="bg-slate-950 text-slate-400 uppercase tracking-wider border-b border-slate-800 font-mono">
               <tr>
-                <th className="px-3 py-2.5">Início / Fim</th>
-                <th className="px-3 py-2.5">Duração</th>
-                <th className="px-3 py-2.5">Equipamento</th>
-                <th className="px-3 py-2.5">Linha</th>
-                <th className="px-3 py-2.5">Tipo</th>
-                <th className="px-3 py-2.5">Causa / Problema</th>
-                <th className="px-3 py-2.5">Responsável</th>
+                <th className="px-3 py-2.5 text-center">Início / Fim</th>
+                <th className="px-3 py-2.5 text-center">Duração</th>
+                <th className="px-3 py-2.5 text-center">Equipamento</th>
+                <th className="px-3 py-2.5 text-center">Linha</th>
+                <th className="px-3 py-2.5 text-center">Tipo</th>
+                <th className="px-3 py-2.5 text-center">Causa / Problema</th>
+                <th className="px-3 py-2.5 text-center">Responsável</th>
                 <th className="px-3 py-2.5 text-center">Ações</th>
               </tr>
             </thead>
@@ -560,20 +560,20 @@ export const MaintenanceForm: React.FC<MaintenanceFormProps> = ({
               ) : (
                 filteredDowntimes.map((item) => (
                   <tr key={item.id} className="hover:bg-slate-800/40 transition-colors">
-                    <td className="px-3 py-2.5 text-slate-300 whitespace-nowrap">
+                    <td className="px-3 py-2.5 text-center text-slate-300 whitespace-nowrap">
                       <div>{new Date(item.start_datetime).toLocaleDateString('pt-BR')}</div>
                       <div className="text-[10px] text-slate-500">
                         {new Date(item.start_datetime).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })} →{' '}
                         {new Date(item.end_datetime).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}
                       </div>
                     </td>
-                    <td className="px-3 py-2.5 whitespace-nowrap font-bold text-amber-400">
+                    <td className="px-3 py-2.5 text-center whitespace-nowrap font-bold text-amber-400">
                       {formatDisplayDuration(item.duration_minutes)}
                     </td>
-                    <td className="px-3 py-2.5 font-bold text-white whitespace-nowrap">
+                    <td className="px-3 py-2.5 text-center font-bold text-white whitespace-nowrap">
                       {item.equipment_name}
                     </td>
-                    <td className="px-3 py-2.5 whitespace-nowrap">
+                    <td className="px-3 py-2.5 text-center whitespace-nowrap">
                       <span className={`px-2 py-0.5 rounded-full text-[10px] font-semibold ${
                         item.production_line === 'Vísceras'
                           ? 'bg-sky-950 text-sky-400 border border-sky-800'
@@ -584,7 +584,7 @@ export const MaintenanceForm: React.FC<MaintenanceFormProps> = ({
                         {item.production_line}
                       </span>
                     </td>
-                    <td className="px-3 py-2.5 whitespace-nowrap">
+                    <td className="px-3 py-2.5 text-center whitespace-nowrap">
                       <span className={`px-2 py-0.5 rounded-full text-[10px] font-semibold ${
                         item.maintenance_type === 'Não planejada'
                           ? 'bg-rose-950 text-rose-400 border border-rose-800'
@@ -595,10 +595,10 @@ export const MaintenanceForm: React.FC<MaintenanceFormProps> = ({
                         {item.maintenance_type}
                       </span>
                     </td>
-                    <td className="px-3 py-2.5 font-sans text-slate-300 max-w-xs truncate" title={item.problem_description}>
+                    <td className="px-3 py-2.5 text-center font-sans text-slate-300 max-w-xs truncate mx-auto" title={item.problem_description}>
                       {item.problem_description}
                     </td>
-                    <td className="px-3 py-2.5 font-sans text-slate-400 whitespace-nowrap">
+                    <td className="px-3 py-2.5 text-center font-sans text-slate-400 whitespace-nowrap">
                       {item.responsible_person || '—'}
                     </td>
                     <td className="px-3 py-2.5 text-center whitespace-nowrap">
