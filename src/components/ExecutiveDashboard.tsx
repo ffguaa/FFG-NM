@@ -42,6 +42,22 @@ const getRecordTotalYieldPct = (rec: FfgYieldRecord): number => {
   return Math.round((getRecordFarinhaYieldPct(rec) + getRecordOilYieldPct(rec)) * 100) / 100;
 };
 
+const formatDateDDMM = (isoDate: string): string => {
+  if (!isoDate) return '';
+  const datePart = isoDate.split('T')[0];
+  const parts = datePart.split('-');
+  if (parts.length !== 3) return isoDate;
+  return `${parts[2]}/${parts[1]}`;
+};
+
+const formatDateDDMMYYYY = (isoDate: string): string => {
+  if (!isoDate) return '';
+  const datePart = isoDate.split('T')[0];
+  const parts = datePart.split('-');
+  if (parts.length !== 3) return isoDate;
+  return `${parts[2]}/${parts[1]}/${parts[0]}`;
+};
+
 export const ExecutiveDashboard: React.FC<ExecutiveDashboardProps> = ({
   yieldRecords,
   downtimes,
@@ -65,14 +81,22 @@ export const ExecutiveDashboard: React.FC<ExecutiveDashboardProps> = ({
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | number | null>(null);
   const deleteTimeoutRef = React.useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  // Filtered Yield Records
+  // Filtered Yield Records (strictly sorted DESC by production_date, most recent on top)
   const filteredYieldRecords = useMemo(() => {
-    return yieldRecords.filter((rec) => {
-      if (shiftFilter !== 'Todos' && rec.shift !== shiftFilter) return false;
-      if (startDate && rec.production_date < startDate) return false;
-      if (endDate && rec.production_date > endDate) return false;
-      return true;
-    });
+    return yieldRecords
+      .filter((rec) => {
+        if (shiftFilter !== 'Todos' && rec.shift !== shiftFilter) return false;
+        if (startDate && rec.production_date < startDate) return false;
+        if (endDate && rec.production_date > endDate) return false;
+        return true;
+      })
+      .sort((a, b) => {
+        const dateCmp = b.production_date.localeCompare(a.production_date);
+        if (dateCmp !== 0) return dateCmp;
+        const createdA = a.created_at || '';
+        const createdB = b.created_at || '';
+        return createdB.localeCompare(createdA);
+      });
   }, [yieldRecords, shiftFilter, startDate, endDate]);
 
   // Filtered Downtimes
@@ -575,6 +599,7 @@ export const ExecutiveDashboard: React.FC<ExecutiveDashboardProps> = ({
                       return (
                         <div
                           key={rec.id || i}
+                          title={`${formatDateDDMMYYYY(rec.production_date)} (${rec.shift}) — Farinha: ${farinhaPct.toFixed(2)}% | Óleo: ${oilPct.toFixed(2)}%`}
                           className="flex-1 min-w-[66px] max-w-[92px] flex flex-col items-center gap-1.5"
                         >
                           <div className="flex items-center justify-center gap-1.5 text-[10px] font-bold font-mono">
@@ -595,7 +620,7 @@ export const ExecutiveDashboard: React.FC<ExecutiveDashboardProps> = ({
                           </div>
 
                           <span className="text-[10px] font-mono text-slate-600 truncate w-full text-center">
-                            {rec.production_date.slice(5)} ({rec.shift})
+                            {formatDateDDMM(rec.production_date)}
                           </span>
                         </div>
                       );
@@ -607,6 +632,12 @@ export const ExecutiveDashboard: React.FC<ExecutiveDashboardProps> = ({
                         : chartMode === 'farinha'
                         ? farinhaPct
                         : totalPct;
+                    const metricLabel =
+                      chartMode === 'oleo'
+                        ? 'Rend. Óleo'
+                        : chartMode === 'farinha'
+                        ? 'Rend. Farinha'
+                        : 'Rend. Total';
                     const heightPct = Math.min(100, Math.max(4, (pct / chartRecords.scaleMax) * 100));
                     const barColor =
                       chartMode === 'oleo'
@@ -624,6 +655,7 @@ export const ExecutiveDashboard: React.FC<ExecutiveDashboardProps> = ({
                     return (
                       <div
                         key={rec.id || i}
+                        title={`${formatDateDDMMYYYY(rec.production_date)} (${rec.shift}) — ${metricLabel}: ${pct.toFixed(2)}%`}
                         className="flex-1 min-w-[52px] max-w-[78px] flex flex-col items-center gap-1.5"
                       >
                         <span className={`text-[10px] font-bold font-mono ${textColor}`}>
@@ -638,7 +670,7 @@ export const ExecutiveDashboard: React.FC<ExecutiveDashboardProps> = ({
                         </div>
 
                         <span className="text-[10px] font-mono text-slate-600 truncate w-full text-center">
-                          {rec.production_date.slice(5)} ({rec.shift})
+                          {formatDateDDMM(rec.production_date)}
                         </span>
                       </div>
                     );
@@ -697,7 +729,7 @@ export const ExecutiveDashboard: React.FC<ExecutiveDashboardProps> = ({
                       return (
                         <tr key={item.id} className="hover:bg-slate-50 transition-colors">
                           <td className="px-3 py-2.5 text-center font-bold text-slate-900 whitespace-nowrap">
-                            {item.production_date}
+                            {formatDateDDMMYYYY(item.production_date)}
                           </td>
                           <td className="px-3 py-2.5 text-center whitespace-nowrap">
                             <span className="px-2 py-0.5 rounded-full bg-emerald-50 border border-emerald-200 text-emerald-700 font-bold text-[10px]">
@@ -965,7 +997,7 @@ export const ExecutiveDashboard: React.FC<ExecutiveDashboardProps> = ({
             <div className="px-6 py-4 border-b border-slate-200 bg-slate-50 flex items-center justify-between">
               <div>
                 <h3 className="text-base font-bold text-slate-900">
-                  Detalhamento de Sobrepeso &bull; {selectedRecordDetails.production_date} ({selectedRecordDetails.shift})
+                  Detalhamento de Sobrepeso &bull; {formatDateDDMMYYYY(selectedRecordDetails.production_date)} ({selectedRecordDetails.shift})
                 </h3>
                 <p className="text-xs text-slate-500">
                   Total descontado: {Number(selectedRecordDetails.sobrepeso_total_kg).toLocaleString('pt-BR')} kg
