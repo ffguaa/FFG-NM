@@ -60,7 +60,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
           >
             <Scale className={`w-4 h-4 shrink-0 ${activeTab === 'yield' ? 'text-emerald-600' : 'text-slate-500'}`} />
             <div className="text-left">
-              <div>Rendimento & Sobrepeso</div>
+              <div>Rendimento & Produção</div>
               <div className={`text-[10px] font-normal ${activeTab === 'yield' ? 'text-emerald-600/80' : 'text-slate-400'}`}>
                 Importação e Lançamento
               </div>

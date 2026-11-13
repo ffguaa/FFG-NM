@@ -21,18 +21,28 @@ interface ExecutiveDashboardProps {
 
 type ChartViewMode = 'comparativo' | 'oleo' | 'farinha' | 'total';
 
-const getRecordOilKg = (rec: FfgYieldRecord): number => {
+const getRecordOleoAvesKg = (rec: FfgYieldRecord): number => {
   return Number(rec.oil_produced_kg || 0);
 };
 
+const getRecordOleoGraxoKg = (rec: FfgYieldRecord): number => {
+  return Number(rec.gordura_kg || 0);
+};
+
+const getRecordOilKg = (rec: FfgYieldRecord): number => {
+  return getRecordOleoAvesKg(rec) + getRecordOleoGraxoKg(rec);
+};
+
 const getRecordOilYieldPct = (rec: FfgYieldRecord): number => {
+  const mp = Number(rec.mp_destinada_ffg_kg || 0);
+  const totalOil = getRecordOilKg(rec);
+  if (mp > 0) {
+    return Math.round(((totalOil / mp) * 100) * 100) / 100;
+  }
   if (rec.oil_yield_percent !== undefined && rec.oil_yield_percent !== null) {
     return Math.round(Number(rec.oil_yield_percent) * 100) / 100;
   }
-  const mp = Number(rec.mp_destinada_ffg_kg || 0);
-  const oil = getRecordOilKg(rec);
-  if (mp <= 0) return 0;
-  return Math.round(((oil / mp) * 100) * 100) / 100;
+  return 0;
 };
 
 const getRecordFarinhaYieldPct = (rec: FfgYieldRecord): number => {
@@ -699,7 +709,6 @@ export const ExecutiveDashboard: React.FC<ExecutiveDashboardProps> = ({
                     <th className="px-3 py-2.5 text-center">Turno</th>
                     <th className="px-3 py-2.5 text-center">Massa Viva (kg)</th>
                     <th className="px-3 py-2.5 text-center">TPA Total (kg)</th>
-                    <th className="px-3 py-2.5 text-center">Sobrepeso (kg)</th>
                     <th className="px-3 py-2.5 text-center">MP Destinada FFG</th>
                     <th className="px-3 py-2.5 text-center">Farinhas (V+P)</th>
                     <th className="px-3 py-2.5 text-center">Óleo (kg)</th>
@@ -712,12 +721,14 @@ export const ExecutiveDashboard: React.FC<ExecutiveDashboardProps> = ({
                 <tbody className="divide-y divide-slate-200 font-mono text-slate-800">
                   {filteredYieldRecords.length === 0 ? (
                     <tr>
-                      <td colSpan={12} className="px-4 py-8 text-center text-slate-500 font-sans">
+                      <td colSpan={11} className="px-4 py-8 text-center text-slate-500 font-sans">
                         Nenhum registro encontrado.
                       </td>
                     </tr>
                   ) : (
                     filteredYieldRecords.map((item) => {
+                      const oleoAvesKg = getRecordOleoAvesKg(item);
+                      const oleoGraxoKg = getRecordOleoGraxoKg(item);
                       const oilKg = getRecordOilKg(item);
                       const oilYield = getRecordOilYieldPct(item);
                       const farinhaYield = getRecordFarinhaYieldPct(item);
@@ -739,9 +750,6 @@ export const ExecutiveDashboard: React.FC<ExecutiveDashboardProps> = ({
                           <td className="px-3 py-2.5 text-center text-slate-600">
                             {Number(item.tpa_total_kg).toLocaleString('pt-BR')}
                           </td>
-                          <td className="px-3 py-2.5 text-center text-amber-700 font-semibold">
-                            {Number(item.sobrepeso_total_kg).toLocaleString('pt-BR')}
-                          </td>
                           <td className="px-3 py-2.5 text-center font-bold text-emerald-700">
                             {Number(item.mp_destinada_ffg_kg).toLocaleString('pt-BR')}
                           </td>
@@ -749,7 +757,12 @@ export const ExecutiveDashboard: React.FC<ExecutiveDashboardProps> = ({
                             {(Number(item.farinha_visceras_kg) + Number(item.farinha_penas_kg)).toLocaleString('pt-BR')}
                           </td>
                           <td className="px-3 py-2.5 text-center font-semibold text-amber-700">
-                            {oilKg.toLocaleString('pt-BR')}
+                            <div>{oilKg.toLocaleString('pt-BR')}</div>
+                            {oleoGraxoKg > 0 && (
+                              <div className="text-[10px] font-normal text-slate-500 mt-0.5 whitespace-nowrap">
+                                Aves: {oleoAvesKg.toLocaleString('pt-BR')} | Graxo: {oleoGraxoKg.toLocaleString('pt-BR')}
+                              </div>
+                            )}
                           </td>
                           <td className="px-3 py-2.5 text-center font-bold text-emerald-700">
                             {farinhaYield.toFixed(2)}%

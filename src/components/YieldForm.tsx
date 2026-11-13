@@ -90,9 +90,12 @@ export const YieldForm: React.FC<YieldFormProps> = ({
     ? Math.round((((farinhaViscerasKg + farinhaPenasKg) / mpDestinadaFfgKg) * 100) * 100) / 100
     : 0;
 
-  // Rendimento de Óleo (%) = (Produção de Óleo (kg) / Matéria-Prima Processada (kg)) * 100
+  // Óleo Total (kg) = Óleo de Aves (kg) + Óleo Graxo (kg)
+  const totalOilKg = (Number(oilProducedKg) || 0) + (Number(gorduraKg) || 0);
+
+  // Rendimento de Óleo (%) = (Óleo Total (kg) / MP Destinada FFG (kg)) * 100
   const oilYieldPct = mpDestinadaFfgKg > 0
-    ? Math.round(((oilProducedKg / mpDestinadaFfgKg) * 100) * 100) / 100
+    ? Math.round(((totalOilKg / mpDestinadaFfgKg) * 100) * 100) / 100
     : 0;
 
   // Rendimento Geral Total (Farinha + Óleo %)
@@ -246,7 +249,7 @@ export const YieldForm: React.FC<YieldFormProps> = ({
       return;
     }
 
-    if (farinhaViscerasKg <= 0 && farinhaPenasKg <= 0 && oilProducedKg <= 0) {
+    if (farinhaViscerasKg <= 0 && farinhaPenasKg <= 0 && totalOilKg <= 0) {
       showToast('warning', 'Validação', 'Informe a produção de ao menos uma farinha (Vísceras/Penas) ou produção de óleo.');
       return;
     }
@@ -367,7 +370,7 @@ export const YieldForm: React.FC<YieldFormProps> = ({
               <span className="text-xs text-slate-500 font-mono">Fábrica de Farinhas e Gorduras</span>
             </div>
             <h2 className="text-xl font-black text-slate-900 mt-0.5 tracking-tight">
-              Apontamento de Rendimento, Óleo & Desconto de Sobrepeso
+              Apontamento de Rendimento & Produção
             </h2>
           </div>
 
@@ -674,7 +677,7 @@ export const YieldForm: React.FC<YieldFormProps> = ({
               <div>
                 <label className="block text-xs font-semibold text-amber-800 mb-1 flex items-center gap-1.5">
                   <Droplets className="w-3.5 h-3.5 text-amber-600" />
-                  <span>Produção de Óleo (kg)</span>
+                  <span>Óleo de Aves (kg)</span>
                 </label>
                 <div className="relative">
                   <input
@@ -695,7 +698,7 @@ export const YieldForm: React.FC<YieldFormProps> = ({
 
               <div>
                 <label className="block text-xs font-semibold text-slate-700 mb-1">
-                  Gordura (kg) <span className="text-slate-400 text-[10px]">(Opcional)</span>
+                  Óleo Graxo (kg) <span className="text-slate-400 text-[10px]">(Opcional)</span>
                 </label>
                 <div className="relative">
                   <input
@@ -808,8 +811,13 @@ export const YieldForm: React.FC<YieldFormProps> = ({
                     {oilYieldPct.toFixed(2)}%
                   </div>
                   <div className="text-[10px] text-amber-800/75 font-mono mt-0.5">
-                    {oilProducedKg.toLocaleString('pt-BR')} kg óleo
+                    {totalOilKg.toLocaleString('pt-BR')} kg óleo total
                   </div>
+                  {gorduraKg > 0 && (
+                    <div className="text-[9px] text-amber-700/80 font-mono mt-0.5">
+                      Aves: {oilProducedKg.toLocaleString('pt-BR')} | Graxo: {gorduraKg.toLocaleString('pt-BR')}
+                    </div>
+                  )}
                 </div>
               </div>
 
