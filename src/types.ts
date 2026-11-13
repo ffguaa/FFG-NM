@@ -34,6 +34,8 @@ export interface FfgYieldRecord {
   farinha_visceras_kg: number;
   farinha_penas_kg: number;
   gordura_kg: number;
+  oil_produced_kg?: number;
+  oil_yield_percent?: number;
   rendimento_visceras_pct: number;
   rendimento_penas_pct: number;
   rendimento_geral_ffg_pct: number;

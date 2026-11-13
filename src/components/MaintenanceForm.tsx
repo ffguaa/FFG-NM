@@ -5,8 +5,8 @@ import {
 import { supabase } from '../lib/supabase';
 import { useToast } from '../context/ToastContext';
 import { 
-  Clock, Wrench, AlertTriangle, CheckCircle, Trash2, Search, 
-  Filter, Calendar, User, Save, RefreshCw, Cpu, Layers
+  Clock, Wrench, Trash2, Search, 
+  User, Save, RefreshCw, Cpu
 } from 'lucide-react';
 
 interface MaintenanceFormProps {
@@ -24,7 +24,6 @@ export const MaintenanceForm: React.FC<MaintenanceFormProps> = ({
   const getDefaultDates = () => {
     const now = new Date();
     const endStr = now.toISOString().slice(0, 16);
-    // default 30 min before
     const startObj = new Date(now.getTime() - 30 * 60 * 1000);
     const startStr = startObj.toISOString().slice(0, 16);
     return { startStr, endStr };
@@ -48,13 +47,12 @@ export const MaintenanceForm: React.FC<MaintenanceFormProps> = ({
   // Filters for History table
   const [filterLine, setFilterLine] = useState<string>('Todas');
   const [filterType, setFilterType] = useState<string>('Todos');
-  const [filterEquipment, setFilterEquipment] = useState<string>('Todos');
+  const [filterEquipment] = useState<string>('Todos');
   const [searchQuery, setSearchQuery] = useState<string>('');
 
   // Extract unique equipment and responsible persons from history
   const uniqueEquipments = useMemo(() => {
     const set = new Set<string>();
-    // Default poultry industrial equipment seeds for helpful autocompletion
     const defaults = [
       'Cozinhador de Penas 01',
       'Cozinhador de Penas 02',
@@ -159,7 +157,6 @@ export const MaintenanceForm: React.FC<MaintenanceFormProps> = ({
         `Parada de ${durationCalc.text} no equipamento "${payload.equipment_name}" gravada no Supabase.`
       );
 
-      // Reset problem and equipment, keep dates updated
       setEquipmentName('');
       setProblemDescription('');
       const dates = getDefaultDates();
@@ -232,38 +229,38 @@ export const MaintenanceForm: React.FC<MaintenanceFormProps> = ({
     <div className="space-y-6">
       
       {/* Top Banner */}
-      <div className="bg-slate-900 border border-slate-800 rounded-2xl p-5 shadow-xl">
+      <div className="bg-white border border-slate-200 rounded-2xl p-5 shadow-sm">
         <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
           <div>
             <div className="flex items-center gap-2">
-              <span className="text-xs font-bold uppercase tracking-wider text-amber-400 font-mono">
+              <span className="text-xs font-bold uppercase tracking-wider text-amber-700 font-mono">
                 Apontamento de Engenharia & Manutenção
               </span>
-              <span className="w-1.5 h-1.5 rounded-full bg-amber-400" />
-              <span className="text-xs text-slate-400 font-mono">Gestão de Paradas e Ocorrências</span>
+              <span className="w-1.5 h-1.5 rounded-full bg-amber-500" />
+              <span className="text-xs text-slate-500 font-mono">Gestão de Paradas e Ocorrências</span>
             </div>
-            <h2 className="text-xl font-black text-white mt-0.5 tracking-tight">
+            <h2 className="text-xl font-black text-slate-900 mt-0.5 tracking-tight">
               Lançamento Rápido de Paradas & Manutenção FFG
             </h2>
           </div>
 
           <div className="flex items-center gap-3">
-            <span className="px-3 py-1.5 rounded-xl bg-slate-950 border border-slate-800 text-xs font-mono text-slate-300">
-              Total Registrado: <strong className="text-amber-400">{downtimes.length}</strong> paradas
+            <span className="px-3 py-1.5 rounded-xl bg-slate-50 border border-slate-200 text-xs font-mono text-slate-700">
+              Total Registrado: <strong className="text-amber-700">{downtimes.length}</strong> paradas
             </span>
           </div>
         </div>
       </div>
 
-      {/* Fast Recording Form (Strict Requirements 1 to 7) */}
-      <form onSubmit={handleSubmit} className="bg-slate-900 border border-slate-800 rounded-2xl p-6 shadow-xl space-y-6">
+      {/* Fast Recording Form */}
+      <form onSubmit={handleSubmit} className="bg-white border border-slate-200 rounded-2xl p-6 shadow-sm space-y-6">
         
-        <div className="pb-3 border-b border-slate-800 flex items-center justify-between">
-          <h3 className="font-bold text-white text-base flex items-center gap-2">
-            <Wrench className="w-5 h-5 text-amber-400" />
+        <div className="pb-3 border-b border-slate-200 flex items-center justify-between">
+          <h3 className="font-bold text-slate-900 text-base flex items-center gap-2">
+            <Wrench className="w-5 h-5 text-amber-600" />
             Novo Apontamento de Parada Industrial
           </h3>
-          <span className="text-xs text-slate-400 font-mono">Tabela Supabase: ffg_downtimes</span>
+          <span className="text-xs text-slate-500 font-mono">Tabela Supabase: ffg_downtimes</span>
         </div>
 
         {/* Row 1: Datetimes & Highlighted Duration Card */}
@@ -271,8 +268,8 @@ export const MaintenanceForm: React.FC<MaintenanceFormProps> = ({
           
           {/* 1. Início da Parada */}
           <div className="md:col-span-4">
-            <label className="block text-xs font-semibold text-slate-300 mb-1.5 flex items-center gap-1.5">
-              <Clock className="w-3.5 h-3.5 text-amber-400" />
+            <label className="block text-xs font-semibold text-slate-700 mb-1.5 flex items-center gap-1.5">
+              <Clock className="w-3.5 h-3.5 text-amber-600" />
               1. Início da Parada (Data & Hora) *
             </label>
             <input
@@ -280,14 +277,14 @@ export const MaintenanceForm: React.FC<MaintenanceFormProps> = ({
               value={startDatetime}
               onChange={(e) => setStartDatetime(e.target.value)}
               required
-              className="w-full px-3.5 py-2.5 bg-slate-950 border border-slate-700 rounded-xl text-sm text-white font-mono focus:border-amber-400 focus:outline-none"
+              className="w-full px-3.5 py-2.5 bg-white border border-slate-300 rounded-xl text-sm text-slate-900 font-mono focus:border-amber-500 focus:outline-none"
             />
           </div>
 
           {/* 1. Retorno / Fim da Parada */}
           <div className="md:col-span-4">
-            <label className="block text-xs font-semibold text-slate-300 mb-1.5 flex items-center gap-1.5">
-              <Clock className="w-3.5 h-3.5 text-emerald-400" />
+            <label className="block text-xs font-semibold text-slate-700 mb-1.5 flex items-center gap-1.5">
+              <Clock className="w-3.5 h-3.5 text-emerald-600" />
               1. Retorno / Fim da Parada (Data & Hora) *
             </label>
             <input
@@ -295,22 +292,22 @@ export const MaintenanceForm: React.FC<MaintenanceFormProps> = ({
               value={endDatetime}
               onChange={(e) => setEndDatetime(e.target.value)}
               required
-              className="w-full px-3.5 py-2.5 bg-slate-950 border border-slate-700 rounded-xl text-sm text-white font-mono focus:border-emerald-400 focus:outline-none"
+              className="w-full px-3.5 py-2.5 bg-white border border-slate-300 rounded-xl text-sm text-slate-900 font-mono focus:border-emerald-500 focus:outline-none"
             />
           </div>
 
           {/* 2. Quadro Indicativo de Tempo Parado (Auto) */}
           <div className="md:col-span-4">
-            <label className="block text-xs font-semibold text-slate-400 mb-1.5 font-mono">
+            <label className="block text-xs font-semibold text-slate-600 mb-1.5 font-mono">
               2. Tempo Total Parado (Cálculo Automático)
             </label>
             <div className={`px-4 py-2.5 rounded-xl border flex items-center justify-between ${
               durationCalc.isValid
-                ? 'bg-amber-950/60 border-amber-600/70 text-amber-300 shadow-lg shadow-amber-950/30'
-                : 'bg-rose-950/60 border-rose-600/70 text-rose-300'
+                ? 'bg-amber-50 border-amber-300 text-amber-800 shadow-2xs'
+                : 'bg-rose-50 border-rose-300 text-rose-700'
             }`}>
               <div className="flex items-center gap-2">
-                <Clock className="w-5 h-5 animate-pulse" />
+                <Clock className="w-5 h-5" />
                 <span className="text-xs font-semibold">Duração:</span>
               </div>
               <span className="text-xl font-black font-mono tracking-wider">
@@ -321,14 +318,14 @@ export const MaintenanceForm: React.FC<MaintenanceFormProps> = ({
 
         </div>
 
-        {/* Row 2: Equipamento (Input + Dropdown de Histórico) */}
+        {/* Row 2: Equipamento & Responsável */}
         <div className="grid grid-cols-1 md:grid-cols-12 gap-4">
           
           {/* 3. Equipamento */}
           <div className="md:col-span-6">
-            <label className="block text-xs font-semibold text-slate-300 mb-1.5 flex items-center justify-between">
+            <label className="block text-xs font-semibold text-slate-700 mb-1.5 flex items-center justify-between">
               <span className="flex items-center gap-1.5">
-                <Cpu className="w-3.5 h-3.5 text-sky-400" />
+                <Cpu className="w-3.5 h-3.5 text-sky-600" />
                 3. Equipamento (Digite ou selecione do histórico) *
               </span>
               <span className="text-[10px] text-slate-500 font-mono">Autossugestão ativa</span>
@@ -341,7 +338,7 @@ export const MaintenanceForm: React.FC<MaintenanceFormProps> = ({
                 value={equipmentName}
                 onChange={(e) => setEquipmentName(e.target.value)}
                 required
-                className="w-full px-3.5 py-2.5 bg-slate-950 border border-slate-700 rounded-xl text-sm text-white placeholder-slate-500 focus:border-amber-400 focus:outline-none font-mono"
+                className="w-full px-3.5 py-2.5 bg-white border border-slate-300 rounded-xl text-sm text-slate-900 placeholder-slate-400 focus:border-amber-500 focus:outline-none font-mono"
               />
               <datalist id="equipments-list">
                 {uniqueEquipments.map((eq, i) => (
@@ -351,11 +348,11 @@ export const MaintenanceForm: React.FC<MaintenanceFormProps> = ({
             </div>
           </div>
 
-          {/* 7. Responsável pela Solução (Input + Dropdown de Histórico) */}
+          {/* 7. Responsável */}
           <div className="md:col-span-6">
-            <label className="block text-xs font-semibold text-slate-300 mb-1.5 flex items-center justify-between">
+            <label className="block text-xs font-semibold text-slate-700 mb-1.5 flex items-center justify-between">
               <span className="flex items-center gap-1.5">
-                <User className="w-3.5 h-3.5 text-emerald-400" />
+                <User className="w-3.5 h-3.5 text-emerald-600" />
                 7. Responsável pela Solução / Manutenção *
               </span>
               <span className="text-[10px] text-slate-500 font-mono">Técnico ou Equipe</span>
@@ -368,7 +365,7 @@ export const MaintenanceForm: React.FC<MaintenanceFormProps> = ({
                 value={responsiblePerson}
                 onChange={(e) => setResponsiblePerson(e.target.value)}
                 required
-                className="w-full px-3.5 py-2.5 bg-slate-950 border border-slate-700 rounded-xl text-sm text-white placeholder-slate-500 focus:border-emerald-400 focus:outline-none font-mono"
+                className="w-full px-3.5 py-2.5 bg-white border border-slate-300 rounded-xl text-sm text-slate-900 placeholder-slate-400 focus:border-emerald-500 focus:outline-none font-mono"
               />
               <datalist id="responsibles-list">
                 {uniqueResponsibles.map((resp, i) => (
@@ -380,12 +377,12 @@ export const MaintenanceForm: React.FC<MaintenanceFormProps> = ({
 
         </div>
 
-        {/* Row 3: Linha de Produção & Tipo de Manutenção (Quick Select Buttons) */}
+        {/* Row 3: Linha de Produção & Tipo de Manutenção */}
         <div className="grid grid-cols-1 md:grid-cols-12 gap-4">
           
           {/* 4. Linha de Produção */}
           <div className="md:col-span-6 space-y-2">
-            <label className="block text-xs font-semibold text-slate-300">
+            <label className="block text-xs font-semibold text-slate-700">
               4. Linha de Produção *
             </label>
             <div className="grid grid-cols-3 gap-2">
@@ -394,10 +391,10 @@ export const MaintenanceForm: React.FC<MaintenanceFormProps> = ({
                   key={line}
                   type="button"
                   onClick={() => setProductionLine(line)}
-                  className={`py-2.5 px-3 rounded-xl text-xs font-bold transition-all text-center ${
+                  className={`py-2.5 px-3 rounded-xl text-xs font-bold transition-all text-center border ${
                     productionLine === line
-                      ? 'bg-sky-600 text-white shadow-md shadow-sky-600/30 border border-sky-400'
-                      : 'bg-slate-950 text-slate-400 hover:text-white border border-slate-800'
+                      ? 'bg-sky-600 text-white shadow-sm border-sky-600'
+                      : 'bg-white text-slate-600 hover:text-slate-900 hover:bg-slate-50 border-slate-300'
                   }`}
                 >
                   {line}
@@ -408,7 +405,7 @@ export const MaintenanceForm: React.FC<MaintenanceFormProps> = ({
 
           {/* 5. Tipo de Manutenção */}
           <div className="md:col-span-6 space-y-2">
-            <label className="block text-xs font-semibold text-slate-300">
+            <label className="block text-xs font-semibold text-slate-700">
               5. Tipo de Manutenção / Motivo *
             </label>
             <div className="grid grid-cols-3 gap-2">
@@ -417,14 +414,14 @@ export const MaintenanceForm: React.FC<MaintenanceFormProps> = ({
                   key={type}
                   type="button"
                   onClick={() => setMaintenanceType(type)}
-                  className={`py-2.5 px-3 rounded-xl text-xs font-bold transition-all text-center ${
+                  className={`py-2.5 px-3 rounded-xl text-xs font-bold transition-all text-center border ${
                     maintenanceType === type
                       ? type === 'Não planejada'
-                        ? 'bg-rose-600 text-white shadow-md shadow-rose-600/30 border border-rose-400'
+                        ? 'bg-rose-600 text-white shadow-sm border-rose-600'
                         : type === 'Planejada'
-                        ? 'bg-emerald-600 text-slate-950 shadow-md shadow-emerald-600/30 border border-emerald-400'
-                        : 'bg-amber-600 text-slate-950 shadow-md shadow-amber-600/30 border border-amber-400'
-                      : 'bg-slate-950 text-slate-400 hover:text-white border border-slate-800'
+                        ? 'bg-emerald-600 text-white shadow-sm border-emerald-600'
+                        : 'bg-amber-500 text-white shadow-sm border-amber-500'
+                      : 'bg-white text-slate-600 hover:text-slate-900 hover:bg-slate-50 border-slate-300'
                   }`}
                 >
                   {type}
@@ -437,7 +434,7 @@ export const MaintenanceForm: React.FC<MaintenanceFormProps> = ({
 
         {/* Row 4: 6. Descrição do Problema / Causa */}
         <div>
-          <label className="block text-xs font-semibold text-slate-300 mb-1.5 flex items-center gap-1.5">
+          <label className="block text-xs font-semibold text-slate-700 mb-1.5 flex items-center gap-1.5">
             <span>6. Descrição Detalhada do Problema / Causa Raiz / Ação Executada *</span>
           </label>
           <textarea
@@ -446,7 +443,7 @@ export const MaintenanceForm: React.FC<MaintenanceFormProps> = ({
             value={problemDescription}
             onChange={(e) => setProblemDescription(e.target.value)}
             required
-            className="w-full px-3.5 py-2.5 bg-slate-950 border border-slate-700 rounded-xl text-sm text-white placeholder-slate-500 focus:border-amber-400 focus:outline-none"
+            className="w-full px-3.5 py-2.5 bg-white border border-slate-300 rounded-xl text-sm text-slate-900 placeholder-slate-400 focus:border-amber-500 focus:outline-none"
           />
         </div>
 
@@ -455,7 +452,7 @@ export const MaintenanceForm: React.FC<MaintenanceFormProps> = ({
           <button
             type="submit"
             disabled={isSubmitting}
-            className="px-6 py-3 bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-400 hover:to-amber-500 text-slate-950 font-black rounded-xl text-sm shadow-xl shadow-amber-500/20 flex items-center gap-2 transition-all disabled:opacity-50"
+            className="px-6 py-3 bg-amber-500 hover:bg-amber-600 text-white font-bold rounded-xl text-sm shadow-sm flex items-center gap-2 transition-all disabled:opacity-50"
           >
             {isSubmitting ? (
               <>
@@ -474,15 +471,15 @@ export const MaintenanceForm: React.FC<MaintenanceFormProps> = ({
       </form>
 
       {/* Chronological Downtimes History Table with Filters */}
-      <div className="bg-slate-900 border border-slate-800 rounded-2xl p-6 shadow-xl space-y-4">
+      <div className="bg-white border border-slate-200 rounded-2xl p-6 shadow-sm space-y-4">
         
-        <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-4 pb-4 border-b border-slate-800">
+        <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-4 pb-4 border-b border-slate-200">
           <div>
-            <h3 className="text-base font-bold text-white flex items-center gap-2">
-              <Clock className="w-4 h-4 text-amber-400" />
+            <h3 className="text-base font-bold text-slate-900 flex items-center gap-2">
+              <Clock className="w-4 h-4 text-amber-600" />
               Histórico Cronológico de Paradas Gravadas
             </h3>
-            <p className="text-xs text-slate-400">
+            <p className="text-xs text-slate-500">
               {filteredDowntimes.length} de {downtimes.length} registros exibidos
             </p>
           </div>
@@ -491,13 +488,13 @@ export const MaintenanceForm: React.FC<MaintenanceFormProps> = ({
           <div className="flex flex-wrap items-center gap-2 w-full md:w-auto">
             {/* Search */}
             <div className="relative">
-              <Search className="w-3.5 h-3.5 absolute left-3 top-2.5 text-slate-500" />
+              <Search className="w-3.5 h-3.5 absolute left-3 top-2.5 text-slate-400" />
               <input
                 type="text"
                 placeholder="Buscar equipamento/problema..."
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
-                className="pl-8 pr-3 py-1.5 bg-slate-950 border border-slate-800 rounded-lg text-xs text-white placeholder-slate-500 focus:outline-none focus:border-amber-400"
+                className="pl-8 pr-3 py-1.5 bg-white border border-slate-300 rounded-lg text-xs text-slate-900 placeholder-slate-400 focus:outline-none focus:border-amber-500"
               />
             </div>
 
@@ -505,7 +502,7 @@ export const MaintenanceForm: React.FC<MaintenanceFormProps> = ({
             <select
               value={filterLine}
               onChange={(e) => setFilterLine(e.target.value)}
-              className="px-2.5 py-1.5 bg-slate-950 border border-slate-800 rounded-lg text-xs text-slate-300 focus:outline-none focus:border-amber-400"
+              className="px-2.5 py-1.5 bg-white border border-slate-300 rounded-lg text-xs text-slate-800 focus:outline-none focus:border-amber-500"
             >
               <option value="Todas">Todas as Linhas</option>
               <option value="Vísceras">Vísceras</option>
@@ -517,7 +514,7 @@ export const MaintenanceForm: React.FC<MaintenanceFormProps> = ({
             <select
               value={filterType}
               onChange={(e) => setFilterType(e.target.value)}
-              className="px-2.5 py-1.5 bg-slate-950 border border-slate-800 rounded-lg text-xs text-slate-300 focus:outline-none focus:border-amber-400"
+              className="px-2.5 py-1.5 bg-white border border-slate-300 rounded-lg text-xs text-slate-800 focus:outline-none focus:border-amber-500"
             >
               <option value="Todos">Todos os Tipos</option>
               <option value="Não planejada">Não planejada</option>
@@ -527,7 +524,7 @@ export const MaintenanceForm: React.FC<MaintenanceFormProps> = ({
 
             <button
               onClick={onReload}
-              className="p-1.5 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-lg text-xs transition-colors"
+              className="p-1.5 bg-white hover:bg-slate-50 border border-slate-300 text-slate-600 rounded-lg text-xs transition-colors"
               title="Recarregar do Supabase"
             >
               <RefreshCw className="w-3.5 h-3.5" />
@@ -536,9 +533,9 @@ export const MaintenanceForm: React.FC<MaintenanceFormProps> = ({
         </div>
 
         {/* Table */}
-        <div className="overflow-x-auto">
+        <div className="overflow-x-auto border border-slate-200 rounded-xl">
           <table className="w-full text-center text-xs">
-            <thead className="bg-slate-950 text-slate-400 uppercase tracking-wider border-b border-slate-800 font-mono">
+            <thead className="bg-slate-100 text-slate-700 uppercase tracking-wider border-b border-slate-200 font-mono">
               <tr>
                 <th className="px-3 py-2.5 text-center">Início / Fim</th>
                 <th className="px-3 py-2.5 text-center">Duração</th>
@@ -550,7 +547,7 @@ export const MaintenanceForm: React.FC<MaintenanceFormProps> = ({
                 <th className="px-3 py-2.5 text-center">Ações</th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-slate-800/60 font-mono text-slate-200">
+            <tbody className="divide-y divide-slate-200 font-mono text-slate-800 bg-white">
               {filteredDowntimes.length === 0 ? (
                 <tr>
                   <td colSpan={8} className="px-4 py-8 text-center text-slate-500 font-sans">
@@ -559,27 +556,27 @@ export const MaintenanceForm: React.FC<MaintenanceFormProps> = ({
                 </tr>
               ) : (
                 filteredDowntimes.map((item) => (
-                  <tr key={item.id} className="hover:bg-slate-800/40 transition-colors">
-                    <td className="px-3 py-2.5 text-center text-slate-300 whitespace-nowrap">
+                  <tr key={item.id} className="hover:bg-slate-50 transition-colors">
+                    <td className="px-3 py-2.5 text-center text-slate-700 whitespace-nowrap">
                       <div>{new Date(item.start_datetime).toLocaleDateString('pt-BR')}</div>
                       <div className="text-[10px] text-slate-500">
                         {new Date(item.start_datetime).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })} →{' '}
                         {new Date(item.end_datetime).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}
                       </div>
                     </td>
-                    <td className="px-3 py-2.5 text-center whitespace-nowrap font-bold text-amber-400">
+                    <td className="px-3 py-2.5 text-center whitespace-nowrap font-bold text-amber-700">
                       {formatDisplayDuration(item.duration_minutes)}
                     </td>
-                    <td className="px-3 py-2.5 text-center font-bold text-white whitespace-nowrap">
+                    <td className="px-3 py-2.5 text-center font-bold text-slate-900 whitespace-nowrap">
                       {item.equipment_name}
                     </td>
                     <td className="px-3 py-2.5 text-center whitespace-nowrap">
                       <span className={`px-2 py-0.5 rounded-full text-[10px] font-semibold ${
                         item.production_line === 'Vísceras'
-                          ? 'bg-sky-950 text-sky-400 border border-sky-800'
+                          ? 'bg-sky-50 text-sky-700 border border-sky-200'
                           : item.production_line === 'Penas'
-                          ? 'bg-teal-950 text-teal-400 border border-teal-800'
-                          : 'bg-slate-800 text-slate-300 border border-slate-700'
+                          ? 'bg-teal-50 text-teal-700 border border-teal-200'
+                          : 'bg-slate-100 text-slate-700 border border-slate-200'
                       }`}>
                         {item.production_line}
                       </span>
@@ -587,27 +584,27 @@ export const MaintenanceForm: React.FC<MaintenanceFormProps> = ({
                     <td className="px-3 py-2.5 text-center whitespace-nowrap">
                       <span className={`px-2 py-0.5 rounded-full text-[10px] font-semibold ${
                         item.maintenance_type === 'Não planejada'
-                          ? 'bg-rose-950 text-rose-400 border border-rose-800'
+                          ? 'bg-rose-50 text-rose-700 border border-rose-200'
                           : item.maintenance_type === 'Planejada'
-                          ? 'bg-emerald-950 text-emerald-400 border border-emerald-800'
-                          : 'bg-amber-950 text-amber-400 border border-amber-800'
+                          ? 'bg-emerald-50 text-emerald-700 border border-emerald-200'
+                          : 'bg-amber-50 text-amber-700 border border-amber-200'
                       }`}>
                         {item.maintenance_type}
                       </span>
                     </td>
-                    <td className="px-3 py-2.5 text-center font-sans text-slate-300 max-w-xs truncate mx-auto" title={item.problem_description}>
+                    <td className="px-3 py-2.5 text-center font-sans text-slate-700 max-w-xs truncate mx-auto" title={item.problem_description}>
                       {item.problem_description}
                     </td>
-                    <td className="px-3 py-2.5 text-center font-sans text-slate-400 whitespace-nowrap">
+                    <td className="px-3 py-2.5 text-center font-sans text-slate-600 whitespace-nowrap">
                       {item.responsible_person || '—'}
                     </td>
                     <td className="px-3 py-2.5 text-center whitespace-nowrap">
                       {deletingId === item.id ? (
-                        <RefreshCw className="w-3.5 h-3.5 animate-spin text-rose-400 mx-auto" />
+                        <RefreshCw className="w-3.5 h-3.5 animate-spin text-rose-600 mx-auto" />
                       ) : confirmDeleteId === item.id ? (
                         <button
                           onClick={() => handleDelete(item)}
-                          className="px-2 py-0.5 rounded bg-rose-600 hover:bg-rose-500 text-white font-bold text-[11px] font-mono animate-pulse shadow-md shadow-rose-950/40 transition-all"
+                          className="px-2 py-0.5 rounded bg-rose-600 hover:bg-rose-700 text-white font-bold text-[11px] font-mono animate-pulse shadow-xs transition-all"
                           title="Clique novamente para confirmar a exclusão no Supabase"
                         >
                           Confirmar?
@@ -615,7 +612,7 @@ export const MaintenanceForm: React.FC<MaintenanceFormProps> = ({
                       ) : (
                         <button
                           onClick={() => handleRequestDelete(item)}
-                          className="p-1.5 text-slate-400 hover:text-rose-400 hover:bg-rose-950/40 rounded transition-colors"
+                          className="p-1.5 text-slate-500 hover:text-rose-600 hover:bg-rose-50 rounded transition-colors"
                           title="Excluir Parada"
                         >
                           <Trash2 className="w-3.5 h-3.5" />

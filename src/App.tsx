@@ -9,10 +9,10 @@ import { MaintenanceForm } from './components/MaintenanceForm';
 import { SkuManagementModal } from './components/SkuManagementModal';
 import { SpreadsheetHelpModal } from './components/SpreadsheetHelpModal';
 import { FfgSku, FfgYieldRecord, FfgDowntime } from './types';
-import { RefreshCw, AlertOctagon } from 'lucide-react';
+import { RefreshCw } from 'lucide-react';
 
 function AppContent() {
-  const { showSupabaseError, showToast } = useToast();
+  const { showSupabaseError } = useToast();
 
   const [activeTab, setActiveTab] = useState<'dashboard' | 'yield' | 'maintenance'>('dashboard');
 
@@ -114,7 +114,7 @@ function AppContent() {
   }, []);
 
   return (
-    <div className="min-h-screen bg-slate-950 text-slate-100 flex flex-col font-sans selection:bg-emerald-500 selection:text-slate-950">
+    <div className="min-h-screen bg-slate-50 text-slate-900 flex flex-col font-sans selection:bg-emerald-500 selection:text-white">
       
       {/* Top Header */}
       <Header
@@ -133,25 +133,23 @@ function AppContent() {
           connectionStatus={connectionStatus}
           onRetryConnection={verifyConnection}
           onOpenSkus={() => setIsSkuModalOpen(true)}
-          yieldCount={yieldRecords.length}
-          downtimeCount={downtimes.length}
         />
 
         {/* Dynamic Content Area */}
-        <main className="flex-1 overflow-y-auto p-6 md:p-8 bg-slate-950/60">
+        <main className="flex-1 overflow-y-auto p-6 md:p-8 bg-slate-50">
           <div className="max-w-7xl mx-auto">
             {initialLoading ? (
               <div className="flex flex-col items-center justify-center py-32 space-y-4">
                 <div className="relative">
-                  <div className="w-12 h-12 rounded-2xl bg-emerald-500/20 border border-emerald-500/40 flex items-center justify-center animate-spin">
-                    <RefreshCw className="w-6 h-6 text-emerald-400" />
+                  <div className="w-12 h-12 rounded-2xl bg-emerald-50 border border-emerald-200 flex items-center justify-center animate-spin">
+                    <RefreshCw className="w-6 h-6 text-emerald-600" />
                   </div>
                 </div>
                 <div className="text-center">
-                  <h3 className="text-sm font-bold text-white uppercase tracking-wider font-mono">
+                  <h3 className="text-sm font-bold text-slate-900 uppercase tracking-wider font-mono">
                     Conectando ao Supabase...
                   </h3>
-                  <p className="text-xs text-slate-400 mt-1">
+                  <p className="text-xs text-slate-500 mt-1">
                     Carregando tabelas ffg_skus, ffg_yield_records e ffg_downtimes
                   </p>
                 </div>
