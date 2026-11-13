@@ -11,19 +11,33 @@ import {
 } from '../lib/excelParser';
 import {
   Upload, FileSpreadsheet, Save, RefreshCw,
-  Calculator, Layers, Table, Eye, Droplets
+  Calculator, Layers, Table, Eye, Droplets, Pencil, X
 } from 'lucide-react';
 
 interface YieldFormProps {
   skus: FfgSku[];
+  editingRecord?: FfgYieldRecord | null;
+  onCancelEdit?: () => void;
   onOpenSkus: () => void;
   onRecordSaved: () => void;
+  onRecordUpdated?: () => void | Promise<void>;
 }
+
+const formatDateDDMMYYYY = (isoDate: string): string => {
+  if (!isoDate) return '';
+  const datePart = isoDate.split('T')[0];
+  const parts = datePart.split('-');
+  if (parts.length !== 3) return isoDate;
+  return `${parts[2]}/${parts[1]}/${parts[0]}`;
+};
 
 export const YieldForm: React.FC<YieldFormProps> = ({
   skus,
+  editingRecord = null,
+  onCancelEdit,
   onOpenSkus,
   onRecordSaved,
+  onRecordUpdated,
 }) => {
   const { showToast, showSupabaseError } = useToast();
 
@@ -83,6 +97,27 @@ export const YieldForm: React.FC<YieldFormProps> = ({
 
   // Rendimento Geral Total (Farinha + Óleo %)
   const rendimentoGeralTotalPct = Math.round((rendimentoFarinhaPct + oilYieldPct) * 100) / 100;
+
+  // Populate form when entering edit mode
+  useEffect(() => {
+    if (editingRecord) {
+      setProductionDate(editingRecord.production_date.split('T')[0]);
+      setShift(editingRecord.shift);
+      setMassaVivaKg(Number(editingRecord.massa_viva_kg || 0));
+      setTpaTotalKg(Number(editingRecord.tpa_total_kg || 0));
+      setTpaPendentesKg(Number(editingRecord.tpa_pendentes_kg || 0));
+      setSobrepesoTotalKg(Number(editingRecord.sobrepeso_total_kg || 0));
+      setFarinhaViscerasKg(Number(editingRecord.farinha_visceras_kg || 0));
+      setFarinhaPenasKg(Number(editingRecord.farinha_penas_kg || 0));
+      setOilProducedKg(Number(editingRecord.oil_produced_kg || 0));
+      setGorduraKg(Number(editingRecord.gordura_kg || 0));
+      setDetalhesSobrepeso(editingRecord.detalhes_sobrepeso || []);
+      setCachedAbateData(null);
+      setAbateFileName('');
+      setCachedProducaoFile(null);
+      setProducaoFileName('');
+    }
+  }, [editingRecord]);
 
   // Auto-recalculate when shift changes after loading abate spreadsheet
   useEffect(() => {
@@ -175,6 +210,8 @@ export const YieldForm: React.FC<YieldFormProps> = ({
 
   // Reset form
   const handleResetForm = () => {
+    setProductionDate(new Date().toISOString().split('T')[0]);
+    setShift('Indústria');
     setMassaVivaKg(0);
     setTpaTotalKg(0);
     setTpaPendentesKg(0);
@@ -190,7 +227,12 @@ export const YieldForm: React.FC<YieldFormProps> = ({
     setDetalhesSobrepeso([]);
   };
 
-  // Submit to Supabase
+  const handleCancelEditingMode = () => {
+    handleResetForm();
+    onCancelEdit?.();
+  };
+
+  // Submit to Supabase (INSERT or UPDATE when editing)
   const handleSaveYieldRecord = async (e: React.FormEvent) => {
     e.preventDefault();
 
@@ -230,25 +272,54 @@ export const YieldForm: React.FC<YieldFormProps> = ({
         detalhes_sobrepeso: detalhesSobrepeso.length > 0 ? detalhesSobrepeso : null,
       };
 
-      const { error } = await supabase
-        .from('ffg_yield_records')
-        .insert([payload])
-        .select();
+      if (editingRecord && editingRecord.id !== undefined) {
+        const { error } = await supabase
+          .from('ffg_yield_records')
+          .update(payload)
+          .eq('id', editingRecord.id)
+          .select();
 
-      if (error) {
-        throw error;
+        if (error) {
+          throw error;
+        }
+
+        showToast(
+          'success',
+          'Lançamento Atualizado no Supabase',
+          `Registro de ${formatDateDDMMYYYY(productionDate)} atualizado! Farinha: ${rendimentoFarinhaPct.toFixed(2)}% | Óleo: ${oilYieldPct.toFixed(2)}% | Total: ${rendimentoGeralTotalPct.toFixed(2)}%`
+        );
+
+        handleResetForm();
+        if (onRecordUpdated) {
+          await onRecordUpdated();
+        } else {
+          onRecordSaved();
+          onCancelEdit?.();
+        }
+      } else {
+        const { error } = await supabase
+          .from('ffg_yield_records')
+          .insert([payload])
+          .select();
+
+        if (error) {
+          throw error;
+        }
+
+        showToast(
+          'success',
+          'Lançamento Salvo no Supabase',
+          `Rendimento registrado! Farinha: ${rendimentoFarinhaPct.toFixed(2)}% | Óleo: ${oilYieldPct.toFixed(2)}% | Total: ${rendimentoGeralTotalPct.toFixed(2)}%`
+        );
+
+        onRecordSaved();
+        handleResetForm();
       }
-
-      showToast(
-        'success',
-        'Lançamento Salvo no Supabase',
-        `Rendimento registrado! Farinha: ${rendimentoFarinhaPct.toFixed(2)}% | Óleo: ${oilYieldPct.toFixed(2)}% | Total: ${rendimentoGeralTotalPct.toFixed(2)}%`
-      );
-
-      onRecordSaved();
-      handleResetForm();
     } catch (err: any) {
-      showSupabaseError('Falha ao Gravar Rendimento no Supabase', err);
+      showSupabaseError(
+        editingRecord ? 'Falha ao Atualizar Rendimento no Supabase' : 'Falha ao Gravar Rendimento no Supabase',
+        err
+      );
     } finally {
       setIsSaving(false);
     }
@@ -257,13 +328,40 @@ export const YieldForm: React.FC<YieldFormProps> = ({
   return (
     <div className="space-y-6">
 
+      {/* Edit Mode Banner */}
+      {editingRecord && (
+        <div className="bg-amber-50 border border-amber-300 rounded-2xl px-5 py-3.5 shadow-sm flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
+          <div className="flex items-center gap-2.5">
+            <div className="w-8 h-8 rounded-xl bg-amber-100 border border-amber-300 flex items-center justify-center text-amber-700 shrink-0">
+              <Pencil className="w-4 h-4" />
+            </div>
+            <div>
+              <div className="text-xs font-extrabold text-amber-900 font-mono">
+                Editando lançamento de {formatDateDDMMYYYY(editingRecord.production_date)} ({editingRecord.shift})
+              </div>
+              <p className="text-[11px] text-amber-800">
+                Altere os campos desejados e clique em &ldquo;Atualizar Lançamento&rdquo; para gravar as alterações no registro existente.
+              </p>
+            </div>
+          </div>
+          <button
+            type="button"
+            onClick={handleCancelEditingMode}
+            className="px-3.5 py-1.5 bg-white hover:bg-amber-100 border border-amber-300 text-amber-900 rounded-xl text-xs font-bold flex items-center gap-1.5 transition-colors shrink-0"
+          >
+            <X className="w-3.5 h-3.5" />
+            <span>Cancelar Edição</span>
+          </button>
+        </div>
+      )}
+
       {/* Top Banner: Shift Selector */}
       <div className="bg-white border border-slate-200 rounded-2xl p-5 shadow-sm">
         <div className="flex flex-col lg:flex-row items-start lg:items-center justify-between gap-4">
           <div>
             <div className="flex items-center gap-2">
               <span className="text-xs font-bold uppercase tracking-wider text-emerald-700 font-mono">
-                Lançamento Operacional FFG
+                {editingRecord ? 'Edição de Lançamento FFG' : 'Lançamento Operacional FFG'}
               </span>
               <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
               <span className="text-xs text-slate-500 font-mono">Fábrica de Farinhas e Gorduras</span>
@@ -746,32 +844,66 @@ export const YieldForm: React.FC<YieldFormProps> = ({
 
             {/* Action buttons */}
             <div className="pt-2 space-y-2">
-              <button
-                type="button"
-                onClick={handleSaveYieldRecord}
-                disabled={isSaving}
-                className="w-full py-3.5 bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded-xl text-sm shadow-sm flex items-center justify-center gap-2 transition-all disabled:opacity-50"
-              >
-                {isSaving ? (
-                  <>
-                    <RefreshCw className="w-4 h-4 animate-spin" />
-                    <span>Gravando no Supabase...</span>
-                  </>
-                ) : (
-                  <>
-                    <Save className="w-4 h-4" />
-                    <span>Salvar Lançamento no Supabase</span>
-                  </>
-                )}
-              </button>
+              {editingRecord ? (
+                <div className="flex flex-col sm:flex-row gap-2">
+                  <button
+                    type="button"
+                    onClick={handleSaveYieldRecord}
+                    disabled={isSaving}
+                    className="flex-1 py-3.5 px-4 bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded-xl text-sm shadow-sm flex items-center justify-center gap-2 transition-all disabled:opacity-50"
+                  >
+                    {isSaving ? (
+                      <>
+                        <RefreshCw className="w-4 h-4 animate-spin" />
+                        <span>Atualizando...</span>
+                      </>
+                    ) : (
+                      <>
+                        <Save className="w-4 h-4" />
+                        <span>Atualizar Lançamento</span>
+                      </>
+                    )}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={handleCancelEditingMode}
+                    disabled={isSaving}
+                    className="py-3.5 px-4 bg-white hover:bg-slate-100 border border-slate-300 text-slate-700 font-bold rounded-xl text-xs flex items-center justify-center gap-1.5 transition-colors disabled:opacity-50"
+                  >
+                    <X className="w-3.5 h-3.5" />
+                    <span>Cancelar Edição</span>
+                  </button>
+                </div>
+              ) : (
+                <>
+                  <button
+                    type="button"
+                    onClick={handleSaveYieldRecord}
+                    disabled={isSaving}
+                    className="w-full py-3.5 bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded-xl text-sm shadow-sm flex items-center justify-center gap-2 transition-all disabled:opacity-50"
+                  >
+                    {isSaving ? (
+                      <>
+                        <RefreshCw className="w-4 h-4 animate-spin" />
+                        <span>Gravando no Supabase...</span>
+                      </>
+                    ) : (
+                      <>
+                        <Save className="w-4 h-4" />
+                        <span>Salvar Lançamento no Supabase</span>
+                      </>
+                    )}
+                  </button>
 
-              <button
-                type="button"
-                onClick={handleResetForm}
-                className="w-full py-2 bg-white hover:bg-slate-50 border border-slate-300 text-slate-600 hover:text-slate-900 rounded-xl text-xs font-semibold transition-colors"
-              >
-                Limpar Campos
-              </button>
+                  <button
+                    type="button"
+                    onClick={handleResetForm}
+                    className="w-full py-2 bg-white hover:bg-slate-50 border border-slate-300 text-slate-600 hover:text-slate-900 rounded-xl text-xs font-semibold transition-colors"
+                  >
+                    Limpar Campos
+                  </button>
+                </>
+              )}
             </div>
 
           </div>

@@ -15,11 +15,13 @@ function AppContent() {
   const { showSupabaseError } = useToast();
 
   const [activeTab, setActiveTab] = useState<'dashboard' | 'yield' | 'maintenance'>('dashboard');
+  const mainContainerRef = React.useRef<HTMLElement>(null);
 
   // Supabase Data States
   const [skus, setSkus] = useState<FfgSku[]>([]);
   const [yieldRecords, setYieldRecords] = useState<FfgYieldRecord[]>([]);
   const [downtimes, setDowntimes] = useState<FfgDowntime[]>([]);
+  const [editingYieldRecord, setEditingYieldRecord] = useState<FfgYieldRecord | null>(null);
 
   // Connectivity State
   const [connectionStatus, setConnectionStatus] = useState<ConnectionStatus>({
@@ -113,6 +115,28 @@ function AppContent() {
     init();
   }, []);
 
+  const handleStartEditYieldRecord = (record: FfgYieldRecord) => {
+    setEditingYieldRecord(record);
+    setActiveTab('yield');
+    setTimeout(() => {
+      mainContainerRef.current?.scrollTo({ top: 0, behavior: 'smooth' });
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+    }, 50);
+  };
+
+  const handleCancelEditYieldRecord = () => {
+    setEditingYieldRecord(null);
+  };
+
+  const handleYieldRecordUpdated = async () => {
+    await fetchYieldRecords();
+    setEditingYieldRecord(null);
+    setActiveTab('dashboard');
+    setTimeout(() => {
+      mainContainerRef.current?.scrollTo({ top: 0, behavior: 'smooth' });
+    }, 50);
+  };
+
   return (
     <div className="min-h-screen bg-slate-50 text-slate-900 flex flex-col font-sans selection:bg-emerald-500 selection:text-white">
       
@@ -136,7 +160,7 @@ function AppContent() {
         />
 
         {/* Dynamic Content Area */}
-        <main className="flex-1 overflow-y-auto p-6 md:p-8 bg-slate-50">
+        <main ref={mainContainerRef} className="flex-1 overflow-y-auto p-6 md:p-8 bg-slate-50">
           <div className="max-w-7xl mx-auto">
             {initialLoading ? (
               <div className="flex flex-col items-center justify-center py-32 space-y-4">
@@ -162,8 +186,12 @@ function AppContent() {
                     yieldRecords={yieldRecords}
                     downtimes={downtimes}
                     onReload={reloadAll}
-                    onNavigateToYield={() => setActiveTab('yield')}
+                    onNavigateToYield={() => {
+                      setEditingYieldRecord(null);
+                      setActiveTab('yield');
+                    }}
                     onNavigateToMaintenance={() => setActiveTab('maintenance')}
+                    onEditYieldRecord={handleStartEditYieldRecord}
                   />
                 )}
 
@@ -171,8 +199,11 @@ function AppContent() {
                 {activeTab === 'yield' && (
                   <YieldForm
                     skus={skus}
+                    editingRecord={editingYieldRecord}
+                    onCancelEdit={handleCancelEditYieldRecord}
                     onOpenSkus={() => setIsSkuModalOpen(true)}
                     onRecordSaved={fetchYieldRecords}
+                    onRecordUpdated={handleYieldRecordUpdated}
                   />
                 )}
 
