@@ -96,6 +96,7 @@ export interface FfgInventoryBag {
   quality_mineral_matter?: number | null;
   quality_digestibility?: number | null;
   quality_classification?: string | null;
+  is_blocked?: boolean;
   created_at?: string;
   updated_at?: string;
 }

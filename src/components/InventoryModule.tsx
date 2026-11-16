@@ -27,6 +27,7 @@ import {
   Scale,
   Boxes,
   Printer,
+  Ban,
 } from 'lucide-react';
 
 interface InventoryModuleProps {
@@ -209,6 +210,7 @@ export const InventoryModule: React.FC<InventoryModuleProps> = ({
     null
   );
   const [isDeletingInventory, setIsDeletingInventory] = useState<boolean>(false);
+  const [togglingBlockBagKey, setTogglingBlockBagKey] = useState<string | null>(null);
 
   // Quality Tab Filters
   const [qualityClassFilter, setQualityClassFilter] = useState<string>('Todas');
@@ -663,6 +665,7 @@ export const InventoryModule: React.FC<InventoryModuleProps> = ({
             quality_mineral_matter: b.quality_mineral_matter ?? null,
             quality_digestibility: b.quality_digestibility ?? null,
             quality_classification: b.quality_classification ?? null,
+            ...(b.is_blocked ? { is_blocked: true } : {}),
           }));
 
           const { error: bagsError } = await supabase
@@ -1000,6 +1003,55 @@ export const InventoryModule: React.FC<InventoryModuleProps> = ({
       setDraftBags((prev) => prev.filter((_, idx) => idx !== draftIndex));
       setBagPendingDelete(null);
       showToast('info', 'Bag Removido', 'Bag removido do rascunho.');
+    }
+  };
+
+  // Toggle Bag Block status (is_blocked) in real time in Supabase or draft
+  const handleToggleBlockBag = async (bag: FfgInventoryBag, draftIndex?: number) => {
+    const nextBlocked = !Boolean(bag.is_blocked);
+    const bagKey = bag.id !== undefined ? String(bag.id) : `draft-${draftIndex}`;
+
+    if (bag.id !== undefined) {
+      setTogglingBlockBagKey(bagKey);
+      try {
+        const { error } = await supabase
+          .from('ffg_inventory_bags')
+          .update({ is_blocked: nextBlocked })
+          .eq('id', bag.id);
+
+        if (error) {
+          const msg = String(error.message || '');
+          if (error.code === '42703' || error.code === 'PGRST204' || msg.includes('is_blocked')) {
+            showToast(
+              'error',
+              'Coluna is_blocked ausente no Supabase',
+              'Execute no SQL Editor do Supabase: ALTER TABLE public.ffg_inventory_bags ADD COLUMN IF NOT EXISTS is_blocked boolean NOT NULL DEFAULT false;'
+            );
+            return;
+          }
+          throw error;
+        }
+
+        showToast(
+          nextBlocked ? 'warning' : 'success',
+          nextBlocked ? 'Bag Bloqueado' : 'Bag Desbloqueado',
+          `Bag #${bag.bag_code} ${nextBlocked ? 'bloqueado' : 'desbloqueado'} com sucesso.`
+        );
+        await onReload();
+      } catch (err: any) {
+        showSupabaseError('Falha ao Alterar Bloqueio do Bag', err);
+      } finally {
+        setTogglingBlockBagKey(null);
+      }
+    } else if (draftIndex !== undefined) {
+      setDraftBags((prev) =>
+        prev.map((b, idx) => (idx === draftIndex ? { ...b, is_blocked: nextBlocked } : b))
+      );
+      showToast(
+        nextBlocked ? 'warning' : 'success',
+        nextBlocked ? 'Bag Bloqueado no Rascunho' : 'Bag Desbloqueado no Rascunho',
+        `Bag #${bag.bag_code} marcado como ${nextBlocked ? 'bloqueado' : 'desbloqueado'}.`
+      );
     }
   };
 
@@ -1860,79 +1912,142 @@ export const InventoryModule: React.FC<InventoryModuleProps> = ({
                       </td>
                     </tr>
                   ) : (
-                    activeInventoryBags.map((bag, idx) => (
-                      <tr key={bag.id ?? `draft-${idx}`} className="hover:bg-slate-50 transition-colors">
-                        <td className="px-3 py-2.5 text-center font-semibold text-slate-900">
-                          {bag.product_code}
-                        </td>
-                        <td className="px-3 py-2.5 text-center font-sans text-slate-800 max-w-[220px] truncate">
-                          {bag.product_description}
-                        </td>
-                        <td className="px-3 py-2.5 text-center font-bold text-slate-900">
-                          {bag.bag_code}
-                        </td>
-                        <td className="px-3 py-2.5 text-center whitespace-nowrap">
-                          {formatDateDDMMYYYY(bag.production_date)}
-                        </td>
-                        <td className="px-3 py-2.5 text-center whitespace-nowrap">
-                          {formatDateDDMMYYYY(bag.posting_date)}
-                        </td>
-                        <td className="px-3 py-2.5 text-center whitespace-nowrap">
-                          {(bag.posting_time || '').slice(0, 5)}
-                        </td>
-                        <td className="px-3 py-2.5 text-center font-bold">
-                          <span className="px-2 py-0.5 rounded bg-slate-100 border border-slate-200 text-slate-700 text-[10px]">
-                            {bag.period}
-                          </span>
-                        </td>
-                        <td className="px-3 py-2.5 text-center font-bold text-emerald-700 whitespace-nowrap">
-                          {Number(bag.weight_kg || 0).toLocaleString('pt-BR', {
-                            minimumFractionDigits: 2,
-                            maximumFractionDigits: 2,
-                          })}
-                        </td>
-                        <td className="px-3 py-2.5 text-center font-semibold text-slate-900 whitespace-nowrap">
-                          {bag.barcode}
-                        </td>
-                        <td className="px-3 py-2.5 text-center whitespace-nowrap print:hidden">
-                          <div className="flex items-center justify-center gap-1.5">
-                            {renderClassificationBadge(bag.quality_classification, bag)}
-                            <button
-                              type="button"
-                              onClick={() => setInfoModalBag(bag)}
-                              className="p-1 text-sky-600 hover:text-sky-800 rounded hover:bg-sky-50 transition-colors"
-                              title="Ver Indicadores Laboratoriais"
-                            >
-                              <Info className="w-4 h-4" />
-                            </button>
-                            <button
-                              type="button"
-                              onClick={() => {
-                                setEditingBag({ ...bag });
-                                setEditingBagIndex(bag.id === undefined ? idx : null);
-                              }}
-                              className="p-1 text-slate-500 hover:text-emerald-700 rounded hover:bg-emerald-50 transition-colors"
-                              title="Editar Bag"
-                            >
-                              <Pencil className="w-3.5 h-3.5" />
-                            </button>
-                            <button
-                              type="button"
-                              onClick={() =>
-                                setBagPendingDelete({
-                                  bag,
-                                  draftIndex: bag.id === undefined ? idx : undefined,
-                                })
-                              }
-                              className="p-1 text-slate-400 hover:text-rose-600 rounded hover:bg-rose-50 transition-colors"
-                              title="Excluir Bag"
-                            >
-                              <Trash2 className="w-3.5 h-3.5" />
-                            </button>
-                          </div>
-                        </td>
-                      </tr>
-                    ))
+                    activeInventoryBags.map((bag, idx) => {
+                      const isBlocked = Boolean(bag.is_blocked);
+                      const rowKey = bag.id !== undefined ? String(bag.id) : `draft-${idx}`;
+                      return (
+                        <tr
+                          key={bag.id ?? `draft-${idx}`}
+                          className={`transition-colors ${
+                            isBlocked ? 'bg-red-50 hover:bg-red-100/70' : 'hover:bg-slate-50'
+                          }`}
+                        >
+                          <td
+                            className={`px-3 py-2.5 text-center font-semibold text-slate-900 ${
+                              isBlocked ? 'opacity-75' : ''
+                            }`}
+                          >
+                            {bag.product_code}
+                          </td>
+                          <td
+                            className={`px-3 py-2.5 text-center font-sans text-slate-800 max-w-[220px] truncate ${
+                              isBlocked ? 'opacity-75' : ''
+                            }`}
+                          >
+                            {bag.product_description}
+                          </td>
+                          <td
+                            className={`px-3 py-2.5 text-center font-bold text-slate-900 ${
+                              isBlocked ? 'opacity-75' : ''
+                            }`}
+                          >
+                            {bag.bag_code}
+                          </td>
+                          <td
+                            className={`px-3 py-2.5 text-center whitespace-nowrap ${
+                              isBlocked ? 'opacity-75' : ''
+                            }`}
+                          >
+                            {formatDateDDMMYYYY(bag.production_date)}
+                          </td>
+                          <td
+                            className={`px-3 py-2.5 text-center whitespace-nowrap ${
+                              isBlocked ? 'opacity-75' : ''
+                            }`}
+                          >
+                            {formatDateDDMMYYYY(bag.posting_date)}
+                          </td>
+                          <td
+                            className={`px-3 py-2.5 text-center whitespace-nowrap ${
+                              isBlocked ? 'opacity-75' : ''
+                            }`}
+                          >
+                            {(bag.posting_time || '').slice(0, 5)}
+                          </td>
+                          <td
+                            className={`px-3 py-2.5 text-center font-bold ${
+                              isBlocked ? 'opacity-75' : ''
+                            }`}
+                          >
+                            <span className="px-2 py-0.5 rounded bg-slate-100 border border-slate-200 text-slate-700 text-[10px]">
+                              {bag.period}
+                            </span>
+                          </td>
+                          <td
+                            className={`px-3 py-2.5 text-center font-bold text-emerald-700 whitespace-nowrap ${
+                              isBlocked ? 'opacity-75' : ''
+                            }`}
+                          >
+                            {Number(bag.weight_kg || 0).toLocaleString('pt-BR', {
+                              minimumFractionDigits: 2,
+                              maximumFractionDigits: 2,
+                            })}
+                          </td>
+                          <td
+                            className={`px-3 py-2.5 text-center font-semibold text-slate-900 whitespace-nowrap ${
+                              isBlocked ? 'opacity-75' : ''
+                            }`}
+                          >
+                            {bag.barcode}
+                          </td>
+                          <td className="px-3 py-2.5 text-center whitespace-nowrap print:hidden">
+                            <div className="flex items-center justify-center gap-1.5">
+                              {renderClassificationBadge(bag.quality_classification, bag)}
+                              <button
+                                type="button"
+                                onClick={() => setInfoModalBag(bag)}
+                                className="p-1 text-sky-600 hover:text-sky-800 rounded hover:bg-sky-50 transition-colors"
+                                title="Ver Indicadores Laboratoriais"
+                              >
+                                <Info className="w-4 h-4" />
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setEditingBag({ ...bag });
+                                  setEditingBagIndex(bag.id === undefined ? idx : null);
+                                }}
+                                className="p-1 text-slate-500 hover:text-emerald-700 rounded hover:bg-emerald-50 transition-colors"
+                                title="Editar Bag"
+                              >
+                                <Pencil className="w-3.5 h-3.5" />
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() =>
+                                  handleToggleBlockBag(
+                                    bag,
+                                    bag.id === undefined ? idx : undefined
+                                  )
+                                }
+                                disabled={togglingBlockBagKey === rowKey}
+                                className={`p-1 rounded transition-colors disabled:opacity-50 ${
+                                  isBlocked
+                                    ? 'text-red-500 hover:text-red-700 bg-red-100/80 hover:bg-red-200/80'
+                                    : 'text-slate-400 hover:text-red-600 hover:bg-red-50'
+                                }`}
+                                title={isBlocked ? 'Desbloquear Bag' : 'Bloquear Bag'}
+                              >
+                                <Ban className="w-3.5 h-3.5" />
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() =>
+                                  setBagPendingDelete({
+                                    bag,
+                                    draftIndex: bag.id === undefined ? idx : undefined,
+                                  })
+                                }
+                                className="p-1 text-slate-400 hover:text-rose-600 rounded hover:bg-rose-50 transition-colors"
+                                title="Excluir Bag"
+                              >
+                                <Trash2 className="w-3.5 h-3.5" />
+                              </button>
+                            </div>
+                          </td>
+                        </tr>
+                      );
+                    })
                   )}
                 </tbody>
               </table>
@@ -2144,7 +2259,12 @@ export const InventoryModule: React.FC<InventoryModuleProps> = ({
                     </tr>
                   ) : (
                     filteredQualityBags.map((bag) => (
-                      <tr key={bag.id} className="hover:bg-slate-50 transition-colors">
+                      <tr
+                        key={bag.id}
+                        className={`transition-colors ${
+                          bag.is_blocked ? 'bg-red-50 hover:bg-red-100/70' : 'hover:bg-slate-50'
+                        }`}
+                      >
                         <td className="px-2.5 py-2.5 text-center font-semibold text-slate-900 whitespace-nowrap">
                           {bag.barcode}
                         </td>
