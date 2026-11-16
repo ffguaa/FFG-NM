@@ -215,6 +215,13 @@ export const InventoryModule: React.FC<InventoryModuleProps> = ({
   const [qualityFlourFilter, setQualityFlourFilter] = useState<string>('Todas');
   const [qualitySearch, setQualitySearch] = useState<string>('');
 
+  // PDF Export Options Modal State
+  const [isExportModalOpen, setIsExportModalOpen] = useState<boolean>(false);
+  const [draftExportMode, setDraftExportMode] = useState<'general' | 'byDate'>('byDate');
+  const [draftExportDate, setDraftExportDate] = useState<string>('');
+  const [committedExportMode, setCommittedExportMode] = useState<'general' | 'byDate'>('byDate');
+  const [committedExportDate, setCommittedExportDate] = useState<string>('');
+
   // Map inventories by id
   const inventoryMap = useMemo(() => {
     const map = new Map<string, FfgInventory>();
@@ -351,6 +358,105 @@ export const InventoryModule: React.FC<InventoryModuleProps> = ({
     inventoryMap,
     flourType,
   ]);
+
+  // Unique inventory dates sorted descending for PDF Export Modal
+  const uniqueInventoryDates = useMemo(() => {
+    const dateSet = new Set<string>();
+    inventories.forEach((inv) => {
+      if (inv.inventory_date) {
+        dateSet.add(inv.inventory_date.split('T')[0]);
+      }
+    });
+    return Array.from(dateSet).sort((a, b) => b.localeCompare(a));
+  }, [inventories]);
+
+  // Consolidated dataset used specifically for the hidden Landscape PDF Print Layout
+  const printReportData = useMemo(() => {
+    const targetDate = committedExportDate || activeSummaryDate;
+    let sourceBags: FfgInventoryBag[] = [];
+
+    if (committedExportMode === 'general') {
+      sourceBags = inventoryBags;
+    } else {
+      const sameDayInvIds = new Set(
+        inventories
+          .filter((inv) => inv.inventory_date && inv.inventory_date.split('T')[0] === targetDate)
+          .map((inv) => (inv.id !== undefined ? String(inv.id) : ''))
+          .filter(Boolean)
+      );
+      sourceBags = inventoryBags.filter(
+        (b) => b.inventory_id !== undefined && sameDayInvIds.has(String(b.inventory_id))
+      );
+    }
+
+    const viscerasList: FfgInventoryBag[] = [];
+    const penasList: FfgInventoryBag[] = [];
+    let viscerasWeightKg = 0;
+    let penasWeightKg = 0;
+
+    sourceBags.forEach((bag) => {
+      const weight = Number(bag.weight_kg || 0);
+      const type = inferBagFlourType(bag, inventoryMap);
+      if (type === 'Penas') {
+        penasList.push(bag);
+        penasWeightKg += weight;
+      } else {
+        viscerasList.push(bag);
+        viscerasWeightKg += weight;
+      }
+    });
+
+    const dateInventories = inventories.filter(
+      (inv) => inv.inventory_date && inv.inventory_date.split('T')[0] === targetDate
+    );
+
+    return {
+      mode: committedExportMode,
+      targetDate,
+      totalBags: sourceBags.length,
+      totalWeightKg: viscerasWeightKg + penasWeightKg,
+      viscerasList,
+      penasList,
+      viscerasWeightKg,
+      penasWeightKg,
+      viscerasInventories:
+        committedExportMode === 'byDate'
+          ? dateInventories.filter((i) => i.flour_type === 'Vísceras')
+          : [],
+      penasInventories:
+        committedExportMode === 'byDate'
+          ? dateInventories.filter((i) => i.flour_type === 'Penas')
+          : [],
+      dayInventoryCount: dateInventories.length,
+    };
+  }, [
+    committedExportMode,
+    committedExportDate,
+    activeSummaryDate,
+    inventories,
+    inventoryBags,
+    inventoryMap,
+  ]);
+
+  const handleOpenExportModal = () => {
+    const defaultDate = uniqueInventoryDates.includes(activeSummaryDate)
+      ? activeSummaryDate
+      : uniqueInventoryDates[0] || activeSummaryDate;
+    setDraftExportDate(defaultDate);
+    setDraftExportMode(uniqueInventoryDates.length > 0 ? 'byDate' : 'general');
+    setIsExportModalOpen(true);
+  };
+
+  const handleGeneratePdfReport = () => {
+    if (draftExportMode === 'byDate' && !draftExportDate) {
+      showToast('warning', 'Validação', 'Selecione uma data de inventário para gerar o relatório.');
+      return;
+    }
+    setCommittedExportMode(draftExportMode);
+    setCommittedExportDate(draftExportDate || activeSummaryDate);
+    setIsExportModalOpen(false);
+    setTimeout(() => window.print(), 500);
+  };
 
   // ROW 2 KPIs: Resumo Geral do Estoque (all saved bags across all inventories)
   const globalStockKpis = useMemo(() => {
@@ -946,94 +1052,142 @@ export const InventoryModule: React.FC<InventoryModuleProps> = ({
         id="inventory-quality-excel-input"
       />
 
+      {/* Estilo global dedicado para impressão em Paisagem */}
+      <style type="text/css" media="print">{`
+        @page { size: landscape; margin: 10mm; }
+      `}</style>
+
       {/* CABEÇALHO EXCLUSIVO DE IMPRESSÃO / PDF */}
-      <div className="hidden print:flex items-center justify-between border-b-2 border-slate-800 pb-3 mb-4">
+      <div className="hidden print:flex items-center justify-between border-b-2 border-slate-800 pb-2 mb-3">
         <div>
-          <div className="text-xs font-bold uppercase tracking-widest text-slate-600 font-mono">
+          <div className="text-[10px] font-bold uppercase tracking-widest text-slate-600 font-mono">
             União Avícola Agroindustrial &bull; FFG-NM
           </div>
-          <h1 className="text-xl font-black text-slate-900 uppercase tracking-tight">
-            Relatório Consolidado de Inventário — {formatDateDDMMYYYY(activeSummaryDate)}
+          <h1 className="text-base font-black text-slate-900 uppercase tracking-tight">
+            {printReportData.mode === 'general'
+              ? 'Relatório Consolidado — Estoque Geral'
+              : `Relatório Consolidado de Inventário — ${formatDateDDMMYYYY(printReportData.targetDate)}`}
           </h1>
         </div>
-        <div className="text-right text-xs font-mono text-slate-600">
-          <div>Emitido em: {new Date().toLocaleDateString('pt-BR')} às {new Date().toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}</div>
-          <div>{daySummaryKpis.dayInventoryCount} inventário(s) no dia</div>
+        <div className="text-right text-[10px] font-mono text-slate-700">
+          <div>
+            Emitido em: {new Date().toLocaleDateString('pt-BR')} às{' '}
+            {new Date().toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}
+          </div>
+          <div>
+            {printReportData.totalBags} bag(s) &bull;{' '}
+            {printReportData.totalWeightKg.toLocaleString('pt-BR', {
+              minimumFractionDigits: 2,
+              maximumFractionDigits: 2,
+            })}{' '}
+            kg
+          </div>
         </div>
       </div>
 
       {/* ========================================================================= */}
       {/* TOP SUMMARY CARDS (ROW 1: RESUMO DO DIA | ROW 2: ESTOQUE GERAL) */}
       {/* ========================================================================= */}
-      <div className="space-y-3 print:space-y-4">
-        {/* Row 1: Resumo do Dia (Consolidado por Data) */}
-        <div className="space-y-2">
+      <div className="space-y-3 print:space-y-3">
+        {/* Row 1: Resumo do Dia (oculta no PDF se o relatório escolhido for Estoque Geral) */}
+        <div className={`space-y-2 ${printReportData.mode === 'general' ? 'print:hidden' : ''}`}>
           <div className="flex items-center justify-between px-1">
             <span className="text-[11px] font-bold uppercase tracking-wider text-emerald-700 font-mono flex items-center gap-1.5">
               <ClipboardList className="w-3.5 h-3.5" />
-              {`RESUMO DO DIA (${formatDateDDMMYYYY(activeSummaryDate)})`}
-              {daySummaryKpis.dayInventoryCount > 0 && (
-                <span className="text-slate-500 font-normal">
-                  &bull; {daySummaryKpis.dayInventoryCount} inventário(s) consolidado(s)
-                </span>
-              )}
+              <span className="print:hidden">
+                {`RESUMO DO DIA (${formatDateDDMMYYYY(activeSummaryDate)})`}
+                {daySummaryKpis.dayInventoryCount > 0 && (
+                  <span className="text-slate-500 font-normal">
+                    {' '}
+                    &bull; {daySummaryKpis.dayInventoryCount} inventário(s) consolidado(s)
+                  </span>
+                )}
+              </span>
+              <span className="hidden print:inline">
+                {`RESUMO DO DIA (${formatDateDDMMYYYY(printReportData.targetDate)})`}
+                {printReportData.dayInventoryCount > 0 && (
+                  <span className="text-slate-600 font-normal">
+                    {' '}
+                    &bull; {printReportData.dayInventoryCount} inventário(s) consolidado(s)
+                  </span>
+                )}
+              </span>
             </span>
           </div>
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 print:grid-cols-4 gap-4 print:gap-3">
-            <div className="bg-white border border-emerald-200 print:border-slate-400 rounded-2xl p-4 shadow-sm print:shadow-none">
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 print:grid-cols-4 gap-4 print:gap-2">
+            <div className="bg-white border border-emerald-200 print:border-slate-400 rounded-2xl p-4 print:p-2.5 shadow-sm print:shadow-none">
               <div className="text-[10px] font-bold uppercase tracking-wider text-emerald-700 font-mono">
                 Total de Bags (Dia)
               </div>
-              <div className="mt-1.5 text-3xl font-black font-mono text-emerald-700">
-                {daySummaryKpis.totalBags}
+              <div className="mt-1.5 print:mt-0.5 text-3xl print:text-xl font-black font-mono text-emerald-700">
+                <span className="print:hidden">{daySummaryKpis.totalBags}</span>
+                <span className="hidden print:inline">{printReportData.totalBags}</span>
               </div>
               <div className="mt-1 text-[10px] text-slate-500 font-mono">
                 Soma dos inventários do dia
               </div>
             </div>
 
-            <div className="bg-white border border-slate-200 print:border-slate-400 rounded-2xl p-4 shadow-sm print:shadow-none">
+            <div className="bg-white border border-slate-200 print:border-slate-400 rounded-2xl p-4 print:p-2.5 shadow-sm print:shadow-none">
               <div className="text-[10px] font-bold uppercase tracking-wider text-slate-600 font-mono">
                 Bags Farinha de Vísceras
               </div>
-              <div className="mt-1.5 text-3xl font-black font-mono text-slate-900">
-                {daySummaryKpis.viscerasBags}
+              <div className="mt-1.5 print:mt-0.5 text-3xl print:text-xl font-black font-mono text-slate-900">
+                <span className="print:hidden">{daySummaryKpis.viscerasBags}</span>
+                <span className="hidden print:inline">{printReportData.viscerasList.length}</span>
               </div>
               <div className="mt-1 text-[10px] text-slate-500 font-mono">
                 Total de vísceras no dia
               </div>
             </div>
 
-            <div className="bg-white border border-slate-200 print:border-slate-400 rounded-2xl p-4 shadow-sm print:shadow-none">
+            <div className="bg-white border border-slate-200 print:border-slate-400 rounded-2xl p-4 print:p-2.5 shadow-sm print:shadow-none">
               <div className="text-[10px] font-bold uppercase tracking-wider text-slate-600 font-mono">
                 Bags Farinha de Penas
               </div>
-              <div className="mt-1.5 text-3xl font-black font-mono text-slate-900">
-                {daySummaryKpis.penasBags}
+              <div className="mt-1.5 print:mt-0.5 text-3xl print:text-xl font-black font-mono text-slate-900">
+                <span className="print:hidden">{daySummaryKpis.penasBags}</span>
+                <span className="hidden print:inline">{printReportData.penasList.length}</span>
               </div>
               <div className="mt-1 text-[10px] text-slate-500 font-mono">
                 Total de penas no dia
               </div>
             </div>
 
-            <div className="bg-white border border-slate-200 print:border-slate-400 rounded-2xl p-4 shadow-sm print:shadow-none">
+            <div className="bg-white border border-slate-200 print:border-slate-400 rounded-2xl p-4 print:p-2.5 shadow-sm print:shadow-none">
               <div className="text-[10px] font-bold uppercase tracking-wider text-slate-600 font-mono">
                 Peso Total (Dia)
               </div>
-              <div className="mt-1.5 flex items-baseline gap-1.5">
-                <span className="text-2xl font-black font-mono text-slate-900">
-                  {daySummaryKpis.totalWeightKg.toLocaleString('pt-BR', {
-                    minimumFractionDigits: 2,
-                    maximumFractionDigits: 2,
-                  })}
+              <div className="mt-1.5 print:mt-0.5 flex items-baseline gap-1.5">
+                <span className="text-2xl print:text-lg font-black font-mono text-slate-900">
+                  <span className="print:hidden">
+                    {daySummaryKpis.totalWeightKg.toLocaleString('pt-BR', {
+                      minimumFractionDigits: 2,
+                      maximumFractionDigits: 2,
+                    })}
+                  </span>
+                  <span className="hidden print:inline">
+                    {printReportData.totalWeightKg.toLocaleString('pt-BR', {
+                      minimumFractionDigits: 2,
+                      maximumFractionDigits: 2,
+                    })}
+                  </span>
                 </span>
                 <span className="text-xs text-slate-500 font-mono">kg</span>
               </div>
               <div className="mt-1 text-[10px] text-slate-500 font-mono">
-                {(daySummaryKpis.totalWeightKg / 1000).toLocaleString('pt-BR', {
-                  minimumFractionDigits: 2,
-                  maximumFractionDigits: 2,
-                })}{' '}
+                <span className="print:hidden">
+                  {(daySummaryKpis.totalWeightKg / 1000).toLocaleString('pt-BR', {
+                    minimumFractionDigits: 2,
+                    maximumFractionDigits: 2,
+                  })}
+                </span>
+                <span className="hidden print:inline">
+                  {(printReportData.totalWeightKg / 1000).toLocaleString('pt-BR', {
+                    minimumFractionDigits: 2,
+                    maximumFractionDigits: 2,
+                  })}
+                </span>{' '}
                 toneladas no dia
               </div>
             </div>
@@ -1145,9 +1299,9 @@ export const InventoryModule: React.FC<InventoryModuleProps> = ({
         <div className="flex items-center gap-2">
           <button
             type="button"
-            onClick={() => window.print()}
+            onClick={handleOpenExportModal}
             className="px-4 py-2 bg-slate-800 hover:bg-slate-900 text-white rounded-xl text-xs font-bold flex items-center gap-1.5 shadow-sm transition-colors"
-            title="Imprimir / Salvar Relatório Consolidado em PDF"
+            title="Configurar e Exportar Relatório em PDF"
           >
             <Printer className="w-4 h-4" />
             <span>Exportar PDF</span>
@@ -2062,225 +2216,396 @@ export const InventoryModule: React.FC<InventoryModuleProps> = ({
       )}
 
       {/* ========================================================================= */}
-      {/* RELATÓRIO UNIFICADO PARA IMPRESSÃO / PDF (AGRUPADO POR TIPO DE FARINHA) */}
+      {/* RELATÓRIO OCULTO EXCLUSIVO PARA IMPRESSÃO EM PAISAGEM (LANDSCAPE PDF) */}
       {/* ========================================================================= */}
-      <div className="hidden print:block space-y-6 mt-4">
-        {daySummaryKpis.viscerasList.length === 0 && daySummaryKpis.penasList.length === 0 ? (
+      <div className="hidden print:block print:w-full space-y-4 mt-3">
+        {printReportData.viscerasList.length === 0 && printReportData.penasList.length === 0 ? (
           <div className="border border-slate-400 rounded-xl p-6 text-center text-sm text-slate-700">
-            Nenhum bag registrado para a data {formatDateDDMMYYYY(activeSummaryDate)}.
+            Nenhum bag encontrado para os critérios selecionados.
           </div>
         ) : (
           <>
-            {daySummaryKpis.viscerasList.length > 0 && (
-              <section className="bg-white border border-slate-400 rounded-xl p-4 print:shadow-none space-y-3">
-                <div className="flex items-center justify-between border-b border-slate-400 pb-2">
-                  <div>
-                    <h3 className="text-base font-black text-slate-900 uppercase tracking-wide">
-                      Farinha de Vísceras — {formatDateDDMMYYYY(activeSummaryDate)}
-                    </h3>
-                    {daySummaryKpis.viscerasInventories.length > 0 && (
-                      <p className="text-xs text-slate-700 font-mono">
-                        {daySummaryKpis.viscerasInventories
-                          .map(
-                            (inv) =>
-                              `Horário: ${(inv.inventory_time || '').slice(0, 5)} | Participantes: ${inv.participants}`
-                          )
-                          .join(' • ')}
-                      </p>
-                    )}
-                  </div>
-                  <div className="text-right text-xs font-mono font-bold text-slate-900">
-                    <div>{daySummaryKpis.viscerasList.length} bag(s)</div>
-                    <div>
-                      {daySummaryKpis.viscerasWeightKg.toLocaleString('pt-BR', {
-                        minimumFractionDigits: 2,
-                        maximumFractionDigits: 2,
-                      })}{' '}
-                      kg
-                    </div>
-                  </div>
-                </div>
+            {(['Vísceras', 'Penas'] as FlourType[]).map((groupType, groupIndex) => {
+              const bagsList =
+                groupType === 'Vísceras'
+                  ? printReportData.viscerasList
+                  : printReportData.penasList;
+              const groupWeightKg =
+                groupType === 'Vísceras'
+                  ? printReportData.viscerasWeightKg
+                  : printReportData.penasWeightKg;
+              const groupInventories =
+                groupType === 'Vísceras'
+                  ? printReportData.viscerasInventories
+                  : printReportData.penasInventories;
 
-                <table className="w-full text-center border-collapse border border-slate-400 print:text-sm print:shadow-none">
-                  <thead className="bg-slate-100 text-slate-900 uppercase font-mono">
-                    <tr>
-                      <th className="px-2 py-2 text-center border border-slate-400">Código</th>
-                      <th className="px-2 py-2 text-center border border-slate-400">Descrição</th>
-                      <th className="px-2 py-2 text-center border border-slate-400">Cód. Bag</th>
-                      <th className="px-2 py-2 text-center border border-slate-400">Data Prod.</th>
-                      <th className="px-2 py-2 text-center border border-slate-400">Data Apont.</th>
-                      <th className="px-2 py-2 text-center border border-slate-400">Hora</th>
-                      <th className="px-2 py-2 text-center border border-slate-400">Per.</th>
-                      <th className="px-2 py-2 text-center border border-slate-400">Peso (kg)</th>
-                      <th className="px-2 py-2 text-center border border-slate-400">Cód. Barra</th>
-                    </tr>
-                  </thead>
-                  <tbody className="font-mono text-slate-900">
-                    {daySummaryKpis.viscerasList.map((bag, idx) => (
-                      <tr key={bag.id ?? `print-visc-${idx}`}>
-                        <td className="px-2 py-1.5 text-center border border-slate-300 font-semibold">
-                          {bag.product_code}
-                        </td>
-                        <td className="px-2 py-1.5 text-center border border-slate-300 font-sans">
-                          {bag.product_description}
-                        </td>
-                        <td className="px-2 py-1.5 text-center border border-slate-300 font-bold">
-                          {bag.bag_code}
-                        </td>
-                        <td className="px-2 py-1.5 text-center border border-slate-300 whitespace-nowrap">
-                          {formatDateDDMMYYYY(bag.production_date)}
-                        </td>
-                        <td className="px-2 py-1.5 text-center border border-slate-300 whitespace-nowrap">
-                          {formatDateDDMMYYYY(bag.posting_date)}
-                        </td>
-                        <td className="px-2 py-1.5 text-center border border-slate-300 whitespace-nowrap">
-                          {(bag.posting_time || '').slice(0, 5)}
-                        </td>
-                        <td className="px-2 py-1.5 text-center border border-slate-300 font-bold">
-                          {bag.period}
-                        </td>
-                        <td className="px-2 py-1.5 text-center border border-slate-300 font-bold whitespace-nowrap">
-                          {Number(bag.weight_kg || 0).toLocaleString('pt-BR', {
+              if (bagsList.length === 0) return null;
+
+              const needsPageBreak =
+                groupIndex === 1 && printReportData.viscerasList.length > 0;
+
+              return (
+                <React.Fragment key={groupType}>
+                  {needsPageBreak && (
+                    <div
+                      className="print:break-before-page"
+                      style={{ pageBreakBefore: 'always' }}
+                    />
+                  )}
+                  <section className="bg-white border border-slate-400 rounded-lg p-2.5 print:shadow-none space-y-2">
+                    <div className="flex items-center justify-between border-b border-slate-400 pb-1.5">
+                      <div>
+                        <h3 className="text-xs font-black text-slate-900 uppercase tracking-wide">
+                          Farinha de {groupType}{' '}
+                          {printReportData.mode === 'byDate'
+                            ? `— ${formatDateDDMMYYYY(printReportData.targetDate)}`
+                            : '— Estoque Geral'}
+                        </h3>
+                        {groupInventories.length > 0 && (
+                          <p className="text-[10px] text-slate-700 font-mono">
+                            {groupInventories
+                              .map(
+                                (inv) =>
+                                  `Horário: ${(inv.inventory_time || '').slice(0, 5)} | Participantes: ${inv.participants}`
+                              )
+                              .join(' • ')}
+                          </p>
+                        )}
+                      </div>
+                      <div className="text-right text-[10px] font-mono font-bold text-slate-900">
+                        <span>{bagsList.length} bag(s) &bull; </span>
+                        <span>
+                          {groupWeightKg.toLocaleString('pt-BR', {
                             minimumFractionDigits: 2,
                             maximumFractionDigits: 2,
-                          })}
-                        </td>
-                        <td className="px-2 py-1.5 text-center border border-slate-300 font-semibold whitespace-nowrap">
-                          {bag.barcode}
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                  <tfoot>
-                    <tr className="bg-slate-100 font-bold font-mono text-slate-900">
-                      <td colSpan={7} className="px-2 py-2 text-center border border-slate-400">
-                        TOTAL FARINHA DE VÍSCERAS ({daySummaryKpis.viscerasList.length} bags)
-                      </td>
-                      <td className="px-2 py-2 text-center border border-slate-400 whitespace-nowrap">
-                        {daySummaryKpis.viscerasWeightKg.toLocaleString('pt-BR', {
-                          minimumFractionDigits: 2,
-                          maximumFractionDigits: 2,
-                        })}{' '}
-                        kg
-                      </td>
-                      <td className="px-2 py-2 text-center border border-slate-400">—</td>
-                    </tr>
-                  </tfoot>
-                </table>
-              </section>
-            )}
-
-            {daySummaryKpis.viscerasList.length > 0 && daySummaryKpis.penasList.length > 0 && (
-              <div className="print:break-before-page" style={{ pageBreakBefore: 'always' }} />
-            )}
-
-            {daySummaryKpis.penasList.length > 0 && (
-              <section className="bg-white border border-slate-400 rounded-xl p-4 print:shadow-none space-y-3">
-                <div className="flex items-center justify-between border-b border-slate-400 pb-2">
-                  <div>
-                    <h3 className="text-base font-black text-slate-900 uppercase tracking-wide">
-                      Farinha de Penas — {formatDateDDMMYYYY(activeSummaryDate)}
-                    </h3>
-                    {daySummaryKpis.penasInventories.length > 0 && (
-                      <p className="text-xs text-slate-700 font-mono">
-                        {daySummaryKpis.penasInventories
-                          .map(
-                            (inv) =>
-                              `Horário: ${(inv.inventory_time || '').slice(0, 5)} | Participantes: ${inv.participants}`
-                          )
-                          .join(' • ')}
-                      </p>
-                    )}
-                  </div>
-                  <div className="text-right text-xs font-mono font-bold text-slate-900">
-                    <div>{daySummaryKpis.penasList.length} bag(s)</div>
-                    <div>
-                      {daySummaryKpis.penasWeightKg.toLocaleString('pt-BR', {
-                        minimumFractionDigits: 2,
-                        maximumFractionDigits: 2,
-                      })}{' '}
-                      kg
+                          })}{' '}
+                          kg
+                        </span>
+                      </div>
                     </div>
-                  </div>
-                </div>
 
-                <table className="w-full text-center border-collapse border border-slate-400 print:text-sm print:shadow-none">
-                  <thead className="bg-slate-100 text-slate-900 uppercase font-mono">
-                    <tr>
-                      <th className="px-2 py-2 text-center border border-slate-400">Código</th>
-                      <th className="px-2 py-2 text-center border border-slate-400">Descrição</th>
-                      <th className="px-2 py-2 text-center border border-slate-400">Cód. Bag</th>
-                      <th className="px-2 py-2 text-center border border-slate-400">Data Prod.</th>
-                      <th className="px-2 py-2 text-center border border-slate-400">Data Apont.</th>
-                      <th className="px-2 py-2 text-center border border-slate-400">Hora</th>
-                      <th className="px-2 py-2 text-center border border-slate-400">Per.</th>
-                      <th className="px-2 py-2 text-center border border-slate-400">Peso (kg)</th>
-                      <th className="px-2 py-2 text-center border border-slate-400">Cód. Barra</th>
-                    </tr>
-                  </thead>
-                  <tbody className="font-mono text-slate-900">
-                    {daySummaryKpis.penasList.map((bag, idx) => (
-                      <tr key={bag.id ?? `print-penas-${idx}`}>
-                        <td className="px-2 py-1.5 text-center border border-slate-300 font-semibold">
-                          {bag.product_code}
-                        </td>
-                        <td className="px-2 py-1.5 text-center border border-slate-300 font-sans">
-                          {bag.product_description}
-                        </td>
-                        <td className="px-2 py-1.5 text-center border border-slate-300 font-bold">
-                          {bag.bag_code}
-                        </td>
-                        <td className="px-2 py-1.5 text-center border border-slate-300 whitespace-nowrap">
-                          {formatDateDDMMYYYY(bag.production_date)}
-                        </td>
-                        <td className="px-2 py-1.5 text-center border border-slate-300 whitespace-nowrap">
-                          {formatDateDDMMYYYY(bag.posting_date)}
-                        </td>
-                        <td className="px-2 py-1.5 text-center border border-slate-300 whitespace-nowrap">
-                          {(bag.posting_time || '').slice(0, 5)}
-                        </td>
-                        <td className="px-2 py-1.5 text-center border border-slate-300 font-bold">
-                          {bag.period}
-                        </td>
-                        <td className="px-2 py-1.5 text-center border border-slate-300 font-bold whitespace-nowrap">
-                          {Number(bag.weight_kg || 0).toLocaleString('pt-BR', {
-                            minimumFractionDigits: 2,
-                            maximumFractionDigits: 2,
-                          })}
-                        </td>
-                        <td className="px-2 py-1.5 text-center border border-slate-300 font-semibold whitespace-nowrap">
-                          {bag.barcode}
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                  <tfoot>
-                    <tr className="bg-slate-100 font-bold font-mono text-slate-900">
-                      <td colSpan={7} className="px-2 py-2 text-center border border-slate-400">
-                        TOTAL FARINHA DE PENAS ({daySummaryKpis.penasList.length} bags)
-                      </td>
-                      <td className="px-2 py-2 text-center border border-slate-400 whitespace-nowrap">
-                        {daySummaryKpis.penasWeightKg.toLocaleString('pt-BR', {
-                          minimumFractionDigits: 2,
-                          maximumFractionDigits: 2,
-                        })}{' '}
-                        kg
-                      </td>
-                      <td className="px-2 py-2 text-center border border-slate-400">—</td>
-                    </tr>
-                  </tfoot>
-                </table>
-              </section>
-            )}
+                    <table className="w-full text-center border-collapse border border-slate-400 text-[9px] leading-tight print:shadow-none">
+                      <thead className="bg-slate-100 text-slate-900 uppercase font-mono">
+                        <tr>
+                          <th className="px-1.5 py-1 text-center border border-slate-400 whitespace-nowrap">
+                            Cód.
+                          </th>
+                          <th className="px-1.5 py-1 text-center border border-slate-400 whitespace-nowrap">
+                            Descrição
+                          </th>
+                          <th className="px-1.5 py-1 text-center border border-slate-400 whitespace-nowrap">
+                            Cód. Bag
+                          </th>
+                          <th className="px-1.5 py-1 text-center border border-slate-400 whitespace-nowrap">
+                            Data Prod.
+                          </th>
+                          <th className="px-1.5 py-1 text-center border border-slate-400 whitespace-nowrap">
+                            Hora
+                          </th>
+                          <th className="px-1.5 py-1 text-center border border-slate-400 whitespace-nowrap">
+                            Per.
+                          </th>
+                          <th className="px-1.5 py-1 text-center border border-slate-400 whitespace-nowrap">
+                            Peso (kg)
+                          </th>
+                          <th className="px-1.5 py-1 text-center border border-slate-400 whitespace-nowrap">
+                            Cód. Barra
+                          </th>
+                          <th className="px-1.5 py-1 text-center border border-slate-400 whitespace-nowrap">
+                            Acidez
+                          </th>
+                          <th className="px-1.5 py-1 text-center border border-slate-400 whitespace-nowrap">
+                            Peróx.
+                          </th>
+                          <th className="px-1.5 py-1 text-center border border-slate-400 whitespace-nowrap">
+                            Umid.
+                          </th>
+                          <th className="px-1.5 py-1 text-center border border-slate-400 whitespace-nowrap">
+                            Ext. Et.
+                          </th>
+                          <th className="px-1.5 py-1 text-center border border-slate-400 whitespace-nowrap">
+                            Prot. Br.
+                          </th>
+                          <th className="px-1.5 py-1 text-center border border-slate-400 whitespace-nowrap">
+                            Mat. Min.
+                          </th>
+                          <th className="px-1.5 py-1 text-center border border-slate-400 whitespace-nowrap">
+                            Digest.
+                          </th>
+                          <th className="px-1.5 py-1 text-center border border-slate-400 whitespace-nowrap">
+                            Classificação / Laudo
+                          </th>
+                        </tr>
+                      </thead>
+                      <tbody className="font-mono text-slate-900">
+                        {bagsList.map((bag, idx) => {
+                          const cls = (bag.quality_classification || '').trim().toUpperCase();
+                          const hasNumericLab = hasBagNumericQuality(bag);
+
+                          let qualityCellContent: React.ReactNode;
+                          if (groupType === 'Vísceras') {
+                            if (cls === 'STANDARD') {
+                              qualityCellContent = (
+                                <span className="font-bold text-emerald-800">STANDARD</span>
+                              );
+                            } else if (cls === 'COMERCIAL') {
+                              qualityCellContent = (
+                                <span className="font-bold text-rose-800">COMERCIAL</span>
+                              );
+                            } else if (cls) {
+                              qualityCellContent = (
+                                <span className="font-bold text-amber-800">{cls}</span>
+                              );
+                            } else {
+                              qualityCellContent = (
+                                <span className="text-slate-500">Aguardando</span>
+                              );
+                            }
+                          } else {
+                            // Farinha de Penas: nunca exibe Standard/Comercial
+                            qualityCellContent = hasNumericLab ? (
+                              <span className="font-bold text-blue-800">Com Laudo</span>
+                            ) : (
+                              <span className="text-slate-500">Sem Laudo</span>
+                            );
+                          }
+
+                          return (
+                            <tr key={bag.id ?? `print-${groupType}-${idx}`}>
+                              <td className="px-1.5 py-1 text-center border border-slate-300 font-semibold whitespace-nowrap">
+                                {bag.product_code}
+                              </td>
+                              <td className="px-1.5 py-1 text-center border border-slate-300 font-sans max-w-[125px] truncate">
+                                {bag.product_description}
+                              </td>
+                              <td className="px-1.5 py-1 text-center border border-slate-300 font-bold whitespace-nowrap">
+                                {bag.bag_code}
+                              </td>
+                              <td className="px-1.5 py-1 text-center border border-slate-300 whitespace-nowrap">
+                                {formatDateDDMMYYYY(bag.production_date)}
+                              </td>
+                              <td className="px-1.5 py-1 text-center border border-slate-300 whitespace-nowrap">
+                                {(bag.posting_time || '').slice(0, 5)}
+                              </td>
+                              <td className="px-1.5 py-1 text-center border border-slate-300 font-bold whitespace-nowrap">
+                                {bag.period}
+                              </td>
+                              <td className="px-1.5 py-1 text-center border border-slate-300 font-bold whitespace-nowrap">
+                                {Number(bag.weight_kg || 0).toLocaleString('pt-BR', {
+                                  minimumFractionDigits: 2,
+                                  maximumFractionDigits: 2,
+                                })}
+                              </td>
+                              <td className="px-1.5 py-1 text-center border border-slate-300 font-semibold whitespace-nowrap">
+                                {bag.barcode}
+                              </td>
+                              <td className="px-1.5 py-1 text-center border border-slate-300 whitespace-nowrap">
+                                {formatQualityNumber(bag.quality_acidity)}
+                              </td>
+                              <td className="px-1.5 py-1 text-center border border-slate-300 whitespace-nowrap">
+                                {formatQualityNumber(bag.quality_peroxide)}
+                              </td>
+                              <td className="px-1.5 py-1 text-center border border-slate-300 whitespace-nowrap">
+                                {formatQualityNumber(bag.quality_moisture, '%')}
+                              </td>
+                              <td className="px-1.5 py-1 text-center border border-slate-300 whitespace-nowrap">
+                                {formatQualityNumber(bag.quality_ether_extract, '%')}
+                              </td>
+                              <td className="px-1.5 py-1 text-center border border-slate-300 font-bold whitespace-nowrap">
+                                {formatQualityNumber(bag.quality_crude_protein, '%')}
+                              </td>
+                              <td className="px-1.5 py-1 text-center border border-slate-300 whitespace-nowrap">
+                                {formatQualityNumber(bag.quality_mineral_matter, '%')}
+                              </td>
+                              <td className="px-1.5 py-1 text-center border border-slate-300 whitespace-nowrap">
+                                {formatQualityNumber(bag.quality_digestibility, '%')}
+                              </td>
+                              <td className="px-1.5 py-1 text-center border border-slate-300 whitespace-nowrap">
+                                {qualityCellContent}
+                              </td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                      <tfoot>
+                        <tr className="bg-slate-100 font-bold font-mono text-slate-900">
+                          <td colSpan={6} className="px-1.5 py-1 text-center border border-slate-400">
+                            TOTAL FARINHA DE {groupType.toUpperCase()} ({bagsList.length} bags)
+                          </td>
+                          <td className="px-1.5 py-1 text-center border border-slate-400 whitespace-nowrap">
+                            {groupWeightKg.toLocaleString('pt-BR', {
+                              minimumFractionDigits: 2,
+                              maximumFractionDigits: 2,
+                            })}{' '}
+                            kg
+                          </td>
+                          <td colSpan={9} className="px-1.5 py-1 text-center border border-slate-400">
+                            —
+                          </td>
+                        </tr>
+                      </tfoot>
+                    </table>
+                  </section>
+                </React.Fragment>
+              );
+            })}
           </>
         )}
       </div>
 
       {/* ========================================================================= */}
+      {/* MODAL: OPÇÕES DE EXPORTAÇÃO DE RELATÓRIO EM PDF */}
+      {/* ========================================================================= */}
+      {isExportModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/50 backdrop-blur-sm animate-in fade-in print:hidden">
+          <div className="bg-white border border-slate-200 w-full max-w-md rounded-2xl shadow-2xl overflow-hidden">
+            <div className="px-6 py-4 border-b border-slate-200 bg-slate-50 flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                <div className="w-9 h-9 rounded-xl bg-slate-800 text-white flex items-center justify-center shrink-0">
+                  <Printer className="w-4 h-4" />
+                </div>
+                <div>
+                  <h3 className="text-sm font-bold text-slate-900">
+                    Opções de Exportação PDF
+                  </h3>
+                  <p className="text-xs text-slate-500">
+                    Relatório otimizado em formato Paisagem (Landscape)
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setIsExportModalOpen(false)}
+                className="p-1.5 text-slate-500 hover:text-slate-900 rounded-lg hover:bg-slate-200"
+              >
+                ✕
+              </button>
+            </div>
+
+            <div className="p-6 space-y-4">
+              <div className="space-y-2.5">
+                <label className="block text-xs font-bold uppercase tracking-wider text-slate-600 font-mono">
+                  Escolha o escopo do relatório
+                </label>
+
+                <button
+                  type="button"
+                  onClick={() => setDraftExportMode('general')}
+                  className={`w-full text-left p-3.5 rounded-xl border transition-all flex items-start gap-3 ${
+                    draftExportMode === 'general'
+                      ? 'bg-emerald-50 border-emerald-400 ring-1 ring-emerald-400'
+                      : 'bg-white border-slate-200 hover:bg-slate-50'
+                  }`}
+                >
+                  <div
+                    className={`w-4 h-4 rounded-full border mt-0.5 flex items-center justify-center shrink-0 ${
+                      draftExportMode === 'general'
+                        ? 'border-emerald-600 bg-emerald-600'
+                        : 'border-slate-300'
+                    }`}
+                  >
+                    {draftExportMode === 'general' && (
+                      <span className="w-1.5 h-1.5 rounded-full bg-white" />
+                    )}
+                  </div>
+                  <div>
+                    <div className="text-xs font-bold text-slate-900">
+                      Estoque Geral
+                    </div>
+                    <div className="text-[11px] text-slate-500 mt-0.5">
+                      Exporta o consolidado de todos os {inventoryBags.length} bag(s) cadastrados no Supabase.
+                    </div>
+                  </div>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => setDraftExportMode('byDate')}
+                  className={`w-full text-left p-3.5 rounded-xl border transition-all flex items-start gap-3 ${
+                    draftExportMode === 'byDate'
+                      ? 'bg-emerald-50 border-emerald-400 ring-1 ring-emerald-400'
+                      : 'bg-white border-slate-200 hover:bg-slate-50'
+                  }`}
+                >
+                  <div
+                    className={`w-4 h-4 rounded-full border mt-0.5 flex items-center justify-center shrink-0 ${
+                      draftExportMode === 'byDate'
+                        ? 'border-emerald-600 bg-emerald-600'
+                        : 'border-slate-300'
+                    }`}
+                  >
+                    {draftExportMode === 'byDate' && (
+                      <span className="w-1.5 h-1.5 rounded-full bg-white" />
+                    )}
+                  </div>
+                  <div className="flex-1">
+                    <div className="text-xs font-bold text-slate-900">
+                      Por Inventário (Data)
+                    </div>
+                    <div className="text-[11px] text-slate-500 mt-0.5">
+                      Consolida todos os inventários (Vísceras e Penas) da data selecionada.
+                    </div>
+                  </div>
+                </button>
+              </div>
+
+              {draftExportMode === 'byDate' && (
+                <div className="pt-1 space-y-1.5">
+                  <label className="block text-xs font-semibold text-slate-700">
+                    Selecione a Data do Inventário *
+                  </label>
+                  {uniqueInventoryDates.length === 0 ? (
+                    <div className="p-3 rounded-xl bg-amber-50 border border-amber-200 text-xs text-amber-800">
+                      Nenhum inventário salvo encontrado no Supabase. Utilize a opção Estoque Geral ou salve um inventário primeiro.
+                    </div>
+                  ) : (
+                    <select
+                      value={draftExportDate}
+                      onChange={(e) => setDraftExportDate(e.target.value)}
+                      className="w-full px-3 py-2.5 bg-white border border-slate-300 rounded-xl text-xs text-slate-900 font-mono font-bold focus:border-emerald-500 focus:outline-none cursor-pointer"
+                    >
+                      {uniqueInventoryDates.map((dateStr) => {
+                        const invCount = inventories.filter(
+                          (inv) => inv.inventory_date && inv.inventory_date.split('T')[0] === dateStr
+                        ).length;
+                        return (
+                          <option key={dateStr} value={dateStr}>
+                            {formatDateDDMMYYYY(dateStr)} ({invCount} inventário(s))
+                          </option>
+                        );
+                      })}
+                    </select>
+                  )}
+                </div>
+              )}
+            </div>
+
+            <div className="px-6 py-3.5 border-t border-slate-200 bg-slate-50 flex justify-end gap-2.5">
+              <button
+                type="button"
+                onClick={() => setIsExportModalOpen(false)}
+                className="px-4 py-2 bg-white hover:bg-slate-100 border border-slate-300 text-slate-700 rounded-xl text-xs font-semibold"
+              >
+                Cancelar
+              </button>
+              <button
+                type="button"
+                onClick={handleGeneratePdfReport}
+                className="px-4 py-2 bg-slate-800 hover:bg-slate-900 text-white rounded-xl text-xs font-bold flex items-center gap-1.5 shadow-sm"
+              >
+                <Printer className="w-3.5 h-3.5" />
+                <span>Gerar Relatório</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ========================================================================= */}
       {/* MODAL FLUTUANTE (i): DETALHES DE QUALIDADE DO BAG */}
       {/* ========================================================================= */}
       {infoModalBag && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/50 backdrop-blur-sm animate-in fade-in">
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/50 backdrop-blur-sm animate-in fade-in print:hidden">
           <div className="bg-white border border-slate-200 w-full max-w-xl rounded-2xl shadow-2xl overflow-hidden">
             <div className="px-6 py-4 border-b border-slate-200 bg-slate-50 flex items-center justify-between">
               <div className="flex items-center gap-3">
@@ -2447,7 +2772,7 @@ export const InventoryModule: React.FC<InventoryModuleProps> = ({
       {/* MODAL: EDITAR BAG E PARÂMETROS DE QUALIDADE */}
       {/* ========================================================================= */}
       {editingBag && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/50 backdrop-blur-sm animate-in fade-in">
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/50 backdrop-blur-sm animate-in fade-in print:hidden">
           <form
             onSubmit={handleSaveBagEdit}
             className="bg-white border border-slate-200 w-full max-w-3xl max-h-[90vh] rounded-2xl shadow-2xl flex flex-col overflow-hidden"
@@ -2822,7 +3147,7 @@ export const InventoryModule: React.FC<InventoryModuleProps> = ({
       {/* MODAL: CONFIRMAÇÃO DE EXCLUSÃO DE BAG (SEM window.confirm) */}
       {/* ========================================================================= */}
       {bagPendingDelete && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/50 backdrop-blur-sm animate-in fade-in">
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/50 backdrop-blur-sm animate-in fade-in print:hidden">
           <div className="bg-white border border-slate-200 w-full max-w-md rounded-2xl shadow-2xl overflow-hidden">
             <div className="px-6 py-4 border-b border-slate-200 bg-rose-50 flex items-center gap-3">
               <div className="w-9 h-9 rounded-xl bg-rose-100 border border-rose-200 flex items-center justify-center text-rose-600 shrink-0">
@@ -2867,7 +3192,7 @@ export const InventoryModule: React.FC<InventoryModuleProps> = ({
       {/* MODAL: CONFIRMAÇÃO DE EXCLUSÃO DE INVENTÁRIO (SEM window.confirm) */}
       {/* ========================================================================= */}
       {inventoryPendingDelete && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/50 backdrop-blur-sm animate-in fade-in">
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/50 backdrop-blur-sm animate-in fade-in print:hidden">
           <div className="bg-white border border-slate-200 w-full max-w-md rounded-2xl shadow-2xl overflow-hidden">
             <div className="px-6 py-4 border-b border-slate-200 bg-rose-50 flex items-center gap-3">
               <div className="w-9 h-9 rounded-xl bg-rose-100 border border-rose-200 flex items-center justify-center text-rose-600 shrink-0">
