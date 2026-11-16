@@ -6,21 +6,30 @@ import { Sidebar } from './components/Sidebar';
 import { ExecutiveDashboard } from './components/ExecutiveDashboard';
 import { YieldForm } from './components/YieldForm';
 import { MaintenanceForm } from './components/MaintenanceForm';
+import { InventoryModule } from './components/InventoryModule';
 import { SkuManagementModal } from './components/SkuManagementModal';
 import { SpreadsheetHelpModal } from './components/SpreadsheetHelpModal';
-import { FfgSku, FfgYieldRecord, FfgDowntime } from './types';
+import {
+  FfgSku,
+  FfgYieldRecord,
+  FfgDowntime,
+  FfgInventory,
+  FfgInventoryBag,
+} from './types';
 import { RefreshCw } from 'lucide-react';
 
 function AppContent() {
   const { showSupabaseError } = useToast();
 
-  const [activeTab, setActiveTab] = useState<'dashboard' | 'yield' | 'maintenance'>('dashboard');
+  const [activeTab, setActiveTab] = useState<'dashboard' | 'yield' | 'maintenance' | 'inventory'>('dashboard');
   const mainContainerRef = React.useRef<HTMLElement>(null);
 
   // Supabase Data States
   const [skus, setSkus] = useState<FfgSku[]>([]);
   const [yieldRecords, setYieldRecords] = useState<FfgYieldRecord[]>([]);
   const [downtimes, setDowntimes] = useState<FfgDowntime[]>([]);
+  const [inventories, setInventories] = useState<FfgInventory[]>([]);
+  const [inventoryBags, setInventoryBags] = useState<FfgInventoryBag[]>([]);
   const [editingYieldRecord, setEditingYieldRecord] = useState<FfgYieldRecord | null>(null);
 
   // Connectivity State
@@ -96,6 +105,32 @@ function AppContent() {
     }
   }, [showSupabaseError]);
 
+  // Load Inventory & Bags
+  const fetchInventoryData = useCallback(async () => {
+    try {
+      const [invRes, bagsRes] = await Promise.all([
+        supabase
+          .from('ffg_inventories')
+          .select('*')
+          .order('inventory_date', { ascending: false })
+          .order('inventory_time', { ascending: false }),
+        supabase
+          .from('ffg_inventory_bags')
+          .select('*')
+          .order('production_date', { ascending: false })
+          .order('created_at', { ascending: false }),
+      ]);
+
+      if (invRes.error) throw invRes.error;
+      if (bagsRes.error) throw bagsRes.error;
+
+      setInventories(invRes.data || []);
+      setInventoryBags(bagsRes.data || []);
+    } catch (err: any) {
+      showSupabaseError('Erro ao Carregar Inventário (ffg_inventories / ffg_inventory_bags)', err);
+    }
+  }, [showSupabaseError]);
+
   // Reload all data
   const reloadAll = useCallback(async () => {
     await Promise.all([
@@ -103,8 +138,9 @@ function AppContent() {
       fetchSkus(),
       fetchYieldRecords(),
       fetchDowntimes(),
+      fetchInventoryData(),
     ]);
-  }, [verifyConnection, fetchSkus, fetchYieldRecords, fetchDowntimes]);
+  }, [verifyConnection, fetchSkus, fetchYieldRecords, fetchDowntimes, fetchInventoryData]);
 
   useEffect(() => {
     const init = async () => {
@@ -212,6 +248,15 @@ function AppContent() {
                   <MaintenanceForm
                     downtimes={downtimes}
                     onReload={fetchDowntimes}
+                  />
+                )}
+
+                {/* Tab 4: Inventory & Stock Quality */}
+                {activeTab === 'inventory' && (
+                  <InventoryModule
+                    inventories={inventories}
+                    inventoryBags={inventoryBags}
+                    onReload={fetchInventoryData}
                   />
                 )}
               </>

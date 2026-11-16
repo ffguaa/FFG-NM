@@ -3,7 +3,7 @@ import { Calendar, Clock, HelpCircle } from 'lucide-react';
 import { ShiftType } from '../types';
 
 interface HeaderProps {
-  activeTab: 'dashboard' | 'yield' | 'maintenance';
+  activeTab: 'dashboard' | 'yield' | 'maintenance' | 'inventory';
   activeShift?: ShiftType;
   onOpenHelp?: () => void;
   onOpenSkus?: () => void;

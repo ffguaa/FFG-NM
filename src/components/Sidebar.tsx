@@ -1,12 +1,12 @@
 import React from 'react';
 import { 
-  BarChart3, Scale, Wrench, Database, RefreshCw, Layers
+  BarChart3, Scale, Wrench, Database, RefreshCw, Layers, PackageCheck
 } from 'lucide-react';
 import { ConnectionStatus } from '../lib/supabase';
 
 interface SidebarProps {
-  activeTab: 'dashboard' | 'yield' | 'maintenance';
-  setActiveTab: (tab: 'dashboard' | 'yield' | 'maintenance') => void;
+  activeTab: 'dashboard' | 'yield' | 'maintenance' | 'inventory';
+  setActiveTab: (tab: 'dashboard' | 'yield' | 'maintenance' | 'inventory') => void;
   connectionStatus: ConnectionStatus;
   onRetryConnection: () => void;
   onOpenSkus: () => void;
@@ -81,6 +81,24 @@ export const Sidebar: React.FC<SidebarProps> = ({
               <div>Paradas & Manutenção</div>
               <div className={`text-[10px] font-normal ${activeTab === 'maintenance' ? 'text-emerald-600/80' : 'text-slate-400'}`}>
                 Apontamento Rápido
+              </div>
+            </div>
+          </button>
+
+          {/* Tab 4: Inventário */}
+          <button
+            onClick={() => setActiveTab('inventory')}
+            className={`w-full flex items-center gap-3 px-3.5 py-3 rounded-xl text-xs font-semibold transition-all border ${
+              activeTab === 'inventory'
+                ? 'bg-emerald-50 text-emerald-700 border-emerald-200 shadow-xs'
+                : 'text-slate-600 hover:text-slate-900 hover:bg-slate-50 border-transparent'
+            }`}
+          >
+            <PackageCheck className={`w-4 h-4 shrink-0 ${activeTab === 'inventory' ? 'text-emerald-600' : 'text-slate-500'}`} />
+            <div className="text-left">
+              <div>Inventário</div>
+              <div className={`text-[10px] font-normal ${activeTab === 'inventory' ? 'text-emerald-600/80' : 'text-slate-400'}`}>
+                Estoque de Bags & Qualidade
               </div>
             </div>
           </button>

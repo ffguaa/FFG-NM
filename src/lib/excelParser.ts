@@ -1,5 +1,5 @@
 import * as XLSX from 'xlsx';
-import { ShiftType, FfgSku, DetalheSobrepesoItem } from '../types';
+import { ShiftType, FfgSku, DetalheSobrepesoItem, FfgInventoryBag } from '../types';
 
 export interface AbateTpaParsedData {
   massaViva: {
@@ -283,3 +283,198 @@ export async function parseProducaoSobrepesoExcel(
     unmatchedCount,
   };
 }
+
+function normalizeExcelDate(val: any): string {
+  if (val === undefined || val === null || val === '') {
+    return new Date().toISOString().split('T')[0];
+  }
+  if (val instanceof Date && !isNaN(val.getTime())) {
+    return val.toISOString().split('T')[0];
+  }
+  if (typeof val === 'number' && val > 20000) {
+    const parsed = XLSX.SSF.parse_date_code(val);
+    if (parsed && parsed.y && parsed.m && parsed.d) {
+      return `${String(parsed.y).padStart(4, '0')}-${String(parsed.m).padStart(2, '0')}-${String(parsed.d).padStart(2, '0')}`;
+    }
+  }
+  const str = String(val).trim();
+  const brMatch = str.match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{2,4})/);
+  if (brMatch) {
+    const day = brMatch[1].padStart(2, '0');
+    const month = brMatch[2].padStart(2, '0');
+    let year = brMatch[3];
+    if (year.length === 2) year = `20${year}`;
+    return `${year}-${month}-${day}`;
+  }
+  const isoMatch = str.match(/^(\d{4})[\/\-](\d{1,2})[\/\-](\d{1,2})/);
+  if (isoMatch) {
+    return `${isoMatch[1]}-${isoMatch[2].padStart(2, '0')}-${isoMatch[3].padStart(2, '0')}`;
+  }
+  return new Date().toISOString().split('T')[0];
+}
+
+function normalizeExcelTime(val: any): string {
+  if (val === undefined || val === null || val === '') return '00:00';
+  if (val instanceof Date && !isNaN(val.getTime())) {
+    return `${String(val.getHours()).padStart(2, '0')}:${String(val.getMinutes()).padStart(2, '0')}`;
+  }
+  if (typeof val === 'number' && val >= 0 && val < 1) {
+    const totalMinutes = Math.round(val * 24 * 60);
+    const h = Math.floor(totalMinutes / 60) % 24;
+    const m = totalMinutes % 60;
+    return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`;
+  }
+  const str = String(val).trim();
+  const timeMatch = str.match(/(\d{1,2}):(\d{2})/);
+  if (timeMatch) {
+    return `${timeMatch[1].padStart(2, '0')}:${timeMatch[2]}`;
+  }
+  return '00:00';
+}
+
+function normalizeBarcodeString(val: any): string {
+  if (val === undefined || val === null) return '';
+  if (typeof val === 'number') {
+    return Math.round(val).toString();
+  }
+  return String(val).trim().replace(/\s+/g, '');
+}
+
+/**
+ * Parses the 9-column Inventory Bag Report (.xlsx / .xls / .csv):
+ * Código | Descrição | Código (Bag) | Data Produção | Data Apontamento | Hora Apont. | Período | Peso | Código de Barra
+ */
+export async function parseInventoryBagsExcel(
+  file: File
+): Promise<Omit<FfgInventoryBag, 'id' | 'inventory_id'>[]> {
+  const buffer = await file.arrayBuffer();
+  const isCsv = file.name.toLowerCase().endsWith('.csv');
+
+  let workbook: XLSX.WorkBook;
+  if (isCsv) {
+    const text = new TextDecoder('utf-8').decode(buffer);
+    workbook = XLSX.read(text, { type: 'string', FS: text.includes(';') ? ';' : ',' });
+  } else {
+    workbook = XLSX.read(buffer, { type: 'array' });
+  }
+
+  if (!workbook.SheetNames.length) {
+    throw new Error('A planilha selecionada está vazia.');
+  }
+
+  const sheet = workbook.Sheets[workbook.SheetNames[0]];
+  const rows: any[][] = XLSX.utils.sheet_to_json(sheet, { header: 1, defval: null, raw: true });
+
+  if (!rows.length) {
+    throw new Error('Nenhum dado encontrado na planilha.');
+  }
+
+  // Locate header row and exact column indices
+  let headerRowIdx = -1;
+  let colProductCode = 0;
+  let colDescription = 1;
+  let colBagCode = 2;
+  let colProdDate = 3;
+  let colPostingDate = 4;
+  let colPostingTime = 5;
+  let colPeriod = 6;
+  let colWeight = 7;
+  let colBarcode = 8;
+
+  for (let r = 0; r < Math.min(20, rows.length); r++) {
+    const row = rows[r] || [];
+    const normalizedCells = row.map((c) =>
+      String(c ?? '')
+        .trim()
+        .toUpperCase()
+        .normalize('NFD')
+        .replace(/[\u0300-\u036f]/g, '')
+    );
+
+    const hasDesc = normalizedCells.some((t) => t.includes('DESCR'));
+    const hasPeso = normalizedCells.some((t) => t.includes('PESO'));
+    const hasBarra = normalizedCells.some((t) => t.includes('BARRA'));
+
+    if ((hasDesc && hasPeso) || (hasPeso && hasBarra)) {
+      headerRowIdx = r;
+      const codeIndices: number[] = [];
+
+      normalizedCells.forEach((t, idx) => {
+        if (t === 'CODIGO' || t.startsWith('COD.') || t === 'COD') {
+          codeIndices.push(idx);
+        } else if (t.includes('DESCR')) {
+          colDescription = idx;
+        } else if (t.includes('BAG') || t.includes('COD. BAG') || t.includes('CODIGO BAG')) {
+          colBagCode = idx;
+        } else if (t.includes('PRODUCAO')) {
+          colProdDate = idx;
+        } else if (t.includes('APONTAMENTO') || t.includes('DATA APONT')) {
+          colPostingDate = idx;
+        } else if (t.includes('HORA')) {
+          colPostingTime = idx;
+        } else if (t.includes('PERIODO')) {
+          colPeriod = idx;
+        } else if (t.includes('PESO')) {
+          colWeight = idx;
+        } else if (t.includes('BARRA')) {
+          colBarcode = idx;
+        }
+      });
+
+      if (codeIndices.length >= 2) {
+        colProductCode = codeIndices[0];
+        colBagCode = codeIndices[1];
+      } else if (codeIndices.length === 1) {
+        colProductCode = codeIndices[0];
+      }
+      break;
+    }
+  }
+
+  const startRow = headerRowIdx >= 0 ? headerRowIdx + 1 : 0;
+  const bags: Omit<FfgInventoryBag, 'id' | 'inventory_id'>[] = [];
+
+  for (let i = startRow; i < rows.length; i++) {
+    const row = rows[i];
+    if (!row || row.every((c) => c === null || String(c).trim() === '')) continue;
+
+    const rawProdCode = String(row[colProductCode] ?? '').trim();
+    const rawDesc = String(row[colDescription] ?? '').trim();
+    const rawBagCode = String(row[colBagCode] ?? '').trim();
+    const rawBarcode = normalizeBarcodeString(row[colBarcode]);
+    const weight = parseExcelNumber(row[colWeight]);
+
+    const upperDesc = rawDesc.toUpperCase();
+    const upperCode = rawProdCode.toUpperCase();
+    if (
+      upperCode === 'TOTAL' ||
+      upperDesc === 'TOTAL' ||
+      upperDesc.startsWith('TOTAL ') ||
+      upperCode === 'CODIGO' ||
+      upperCode === 'CÓDIGO'
+    ) {
+      continue;
+    }
+
+    if (!rawBarcode && !rawBagCode && weight <= 0) continue;
+
+    bags.push({
+      product_code: rawProdCode,
+      product_description: rawDesc,
+      bag_code: rawBagCode,
+      production_date: normalizeExcelDate(row[colProdDate]),
+      posting_date: normalizeExcelDate(row[colPostingDate]),
+      posting_time: normalizeExcelTime(row[colPostingTime]),
+      period: String(row[colPeriod] ?? '').trim().toUpperCase() || 'A',
+      weight_kg: Math.round(weight * 100) / 100,
+      barcode: rawBarcode,
+    });
+  }
+
+  if (bags.length === 0) {
+    throw new Error('Nenhum bag válido encontrado na planilha. Verifique as 9 colunas do relatório padrão.');
+  }
+
+  return bags;
+}
+

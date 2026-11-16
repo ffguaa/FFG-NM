@@ -63,3 +63,55 @@ export interface ToastMessage {
   message: string;
   timestamp: number;
 }
+
+export type FlourType = 'Vísceras' | 'Penas';
+
+export interface FfgInventory {
+  id?: string | number;
+  flour_type: FlourType;
+  inventory_date: string; // YYYY-MM-DD
+  inventory_time: string; // HH:MM
+  participants: string;
+  created_at?: string;
+  updated_at?: string;
+}
+
+export interface FfgInventoryBag {
+  id?: string | number;
+  inventory_id?: string | number;
+  product_code: string;
+  product_description: string;
+  bag_code: string;
+  production_date: string; // YYYY-MM-DD
+  posting_date: string; // YYYY-MM-DD
+  posting_time: string; // HH:MM
+  period: string;
+  weight_kg: number;
+  barcode: string;
+  quality_acidity?: number | null;
+  quality_peroxide?: number | null;
+  quality_moisture?: number | null;
+  quality_ether_extract?: number | null;
+  quality_crude_protein?: number | null;
+  quality_mineral_matter?: number | null;
+  quality_digestibility?: number | null;
+  quality_classification?: string | null;
+  created_at?: string;
+  updated_at?: string;
+}
+
+export interface ParsedQualityRow {
+  production_date?: string | null;
+  time?: string | null;
+  period?: string | null;
+  barcode: string;
+  acidity: number | null;
+  peroxide: number | null;
+  moisture: number | null;
+  ether_extract: number | null;
+  crude_protein: number | null;
+  mineral_matter: number | null;
+  digestibility: number | null;
+  classification: string | null;
+}
+
