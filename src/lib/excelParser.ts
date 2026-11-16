@@ -1,5 +1,5 @@
 import * as XLSX from 'xlsx';
-import { ShiftType, FfgSku, DetalheSobrepesoItem, FfgInventoryBag } from '../types';
+import { ShiftType, FfgSku, DetalheSobrepesoItem, FfgInventoryBag, ParsedQualityRow } from '../types';
 
 export interface AbateTpaParsedData {
   massaViva: {
@@ -478,3 +478,190 @@ export async function parseInventoryBagsExcel(
   return bags;
 }
 
+function parseOptionalExcelNumber(val: any): number | null {
+  if (val === undefined || val === null) return null;
+  if (typeof val === 'number') {
+    return Number.isFinite(val) ? Math.round(val * 10000) / 10000 : null;
+  }
+  const str = String(val).trim();
+  if (
+    !str ||
+    str === '-' ||
+    str === '—' ||
+    str.toLowerCase() === 'null' ||
+    str.toLowerCase() === 'n/a'
+  ) {
+    return null;
+  }
+  const cleaned = str.replace(/%/g, '').replace(/\s+/g, '');
+  if (!cleaned) return null;
+
+  let normalized = cleaned;
+  if (cleaned.includes(',') && cleaned.includes('.')) {
+    normalized = cleaned.replace(/\./g, '').replace(',', '.');
+  } else if (cleaned.includes(',')) {
+    normalized = cleaned.replace(',', '.');
+  }
+  const num = parseFloat(normalized);
+  return Number.isFinite(num) ? Math.round(num * 10000) / 10000 : null;
+}
+
+/**
+ * Parses the Consolidated Quality Report (.xlsx / .xls / .csv):
+ * DATA DE PRODUÇÃO | HORARIO | PERÍODO | N° CODIGO DE BARRAS | ACIDEZ | IND. PEROXIDO |
+ * UMIDADE | EXTRATO ETÉREO | PROTEÍNA BRUTA | MATERIA MINERAL | DIGESTIBILIDADE | CLASSIFICAÇÃO
+ */
+export async function parseQualityReportExcel(file: File): Promise<ParsedQualityRow[]> {
+  const buffer = await file.arrayBuffer();
+  const isCsv = file.name.toLowerCase().endsWith('.csv');
+
+  let workbook: XLSX.WorkBook;
+  if (isCsv) {
+    const text = new TextDecoder('utf-8').decode(buffer);
+    workbook = XLSX.read(text, { type: 'string', FS: text.includes(';') ? ';' : ',' });
+  } else {
+    workbook = XLSX.read(buffer, { type: 'array' });
+  }
+
+  if (!workbook.SheetNames.length) {
+    throw new Error('A planilha de Qualidade selecionada está vazia.');
+  }
+
+  const sheet = workbook.Sheets[workbook.SheetNames[0]];
+  const rows: any[][] = XLSX.utils.sheet_to_json(sheet, { header: 1, defval: null, raw: true });
+
+  if (!rows.length) {
+    throw new Error('Nenhum dado encontrado na planilha de Qualidade.');
+  }
+
+  const normalizeHeader = (cell: any): string =>
+    String(cell ?? '')
+      .trim()
+      .toUpperCase()
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '')
+      .replace(/[°º]/g, '')
+      .replace(/\s+/g, ' ');
+
+  let headerRowIdx = -1;
+  let colProdDate = -1;
+  let colTime = -1;
+  let colPeriod = -1;
+  let colBarcode = -1;
+  let colAcidity = -1;
+  let colPeroxide = -1;
+  let colMoisture = -1;
+  let colEtherExtract = -1;
+  let colCrudeProtein = -1;
+  let colMineralMatter = -1;
+  let colDigestibility = -1;
+  let colClassification = -1;
+
+  for (let r = 0; r < Math.min(25, rows.length); r++) {
+    const row = rows[r] || [];
+    const normalizedCells = row.map(normalizeHeader);
+
+    const hasBarcode = normalizedCells.some((h) => h.includes('BARRA'));
+    const hasQualityMetric = normalizedCells.some(
+      (h) =>
+        h.includes('ACIDEZ') ||
+        h.includes('PEROXIDO') ||
+        h.includes('UMIDADE') ||
+        h.includes('PROTEINA') ||
+        h.includes('DIGEST') ||
+        h.includes('CLASSIFIC')
+    );
+
+    if (hasBarcode && hasQualityMetric) {
+      headerRowIdx = r;
+      normalizedCells.forEach((h, idx) => {
+        if (h.includes('BARRA')) {
+          colBarcode = idx;
+        } else if (h.includes('DATA') && h.includes('PROD')) {
+          colProdDate = idx;
+        } else if (h.includes('HORA')) {
+          colTime = idx;
+        } else if (h.includes('PERIODO')) {
+          colPeriod = idx;
+        } else if (h.includes('ACIDEZ')) {
+          colAcidity = idx;
+        } else if (h.includes('PEROXIDO')) {
+          colPeroxide = idx;
+        } else if (h.includes('UMIDADE')) {
+          colMoisture = idx;
+        } else if (h.includes('EXTRATO') || h.includes('ETEREO')) {
+          colEtherExtract = idx;
+        } else if (h.includes('PROTEINA')) {
+          colCrudeProtein = idx;
+        } else if (h.includes('MINERAL')) {
+          colMineralMatter = idx;
+        } else if (h.includes('DIGEST')) {
+          colDigestibility = idx;
+        } else if (h.includes('CLASSIFIC')) {
+          colClassification = idx;
+        }
+      });
+      break;
+    }
+  }
+
+  if (headerRowIdx === -1 || colBarcode === -1) {
+    throw new Error(
+      'Cabeçalho da planilha de Qualidade não reconhecido. Certifique-se de que a coluna "N° CODIGO DE BARRAS" e os indicadores laboratoriais estejam presentes.'
+    );
+  }
+
+  const parsedRows: ParsedQualityRow[] = [];
+
+  for (let i = headerRowIdx + 1; i < rows.length; i++) {
+    const row = rows[i];
+    if (!row || row.every((c) => c === null || String(c).trim() === '')) continue;
+
+    const rawBarcode = normalizeBarcodeString(row[colBarcode]);
+    if (!rawBarcode) continue;
+
+    const upperBarcode = rawBarcode.toUpperCase();
+    if (
+      upperBarcode === 'TOTAL' ||
+      upperBarcode.includes('CODIGO') ||
+      upperBarcode.includes('BARRA')
+    ) {
+      continue;
+    }
+
+    const rawClass =
+      colClassification >= 0 && row[colClassification] !== null && row[colClassification] !== undefined
+        ? String(row[colClassification]).trim()
+        : '';
+    const classification =
+      !rawClass || rawClass === '-' || rawClass === '—'
+        ? null
+        : rawClass.toUpperCase();
+
+    parsedRows.push({
+      production_date: colProdDate >= 0 && row[colProdDate] !== null ? normalizeExcelDate(row[colProdDate]) : null,
+      time: colTime >= 0 && row[colTime] !== null ? normalizeExcelTime(row[colTime]) : null,
+      period:
+        colPeriod >= 0 && row[colPeriod] !== null && String(row[colPeriod]).trim() !== ''
+          ? String(row[colPeriod]).trim().toUpperCase()
+          : null,
+      barcode: rawBarcode,
+      acidity: colAcidity >= 0 ? parseOptionalExcelNumber(row[colAcidity]) : null,
+      peroxide: colPeroxide >= 0 ? parseOptionalExcelNumber(row[colPeroxide]) : null,
+      moisture: colMoisture >= 0 ? parseOptionalExcelNumber(row[colMoisture]) : null,
+      ether_extract: colEtherExtract >= 0 ? parseOptionalExcelNumber(row[colEtherExtract]) : null,
+      crude_protein: colCrudeProtein >= 0 ? parseOptionalExcelNumber(row[colCrudeProtein]) : null,
+      mineral_matter: colMineralMatter >= 0 ? parseOptionalExcelNumber(row[colMineralMatter]) : null,
+      digestibility: colDigestibility >= 0 ? parseOptionalExcelNumber(row[colDigestibility]) : null,
+      classification,
+    });
+  }
+
+  if (parsedRows.length === 0) {
+    throw new Error(
+      'Nenhuma linha válida com "N° CODIGO DE BARRAS" foi encontrada na planilha de Qualidade.'
+    );
+  }
+
+  return parsedRows;
+}

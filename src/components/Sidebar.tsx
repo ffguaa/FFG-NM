@@ -20,7 +20,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
   onOpenSkus,
 }) => {
   return (
-    <aside className="w-64 bg-white border-r border-slate-200 flex flex-col justify-between shrink-0 select-none">
+    <aside className="w-64 bg-white border-r border-slate-200 flex flex-col justify-between shrink-0 select-none print:hidden">
       
       {/* Top Nav Links */}
       <div className="p-4 space-y-6">

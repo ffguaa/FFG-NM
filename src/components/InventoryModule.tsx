@@ -7,7 +7,7 @@ import {
 } from '../types';
 import { supabase } from '../lib/supabase';
 import { useToast } from '../context/ToastContext';
-import { parseInventoryBagsExcel } from '../lib/excelParser';
+import { parseInventoryBagsExcel, parseQualityReportExcel } from '../lib/excelParser';
 import {
   PackageCheck,
   Upload,
@@ -16,7 +16,6 @@ import {
   Pencil,
   Trash2,
   Info,
-  Camera,
   RefreshCw,
   FileSpreadsheet,
   FlaskConical,
@@ -27,6 +26,7 @@ import {
   AlertTriangle,
   Scale,
   Boxes,
+  Printer,
 } from 'lucide-react';
 
 interface InventoryModuleProps {
@@ -70,7 +70,26 @@ const formatQualityNumber = (val?: number | null, suffix = ''): string => {
   })}${suffix}`;
 };
 
-const renderClassificationBadge = (classification?: string | null) => {
+const hasBagNumericQuality = (bag?: FfgInventoryBag | null): boolean => {
+  if (!bag) return false;
+  const numericFields = [
+    bag.quality_acidity,
+    bag.quality_peroxide,
+    bag.quality_moisture,
+    bag.quality_ether_extract,
+    bag.quality_crude_protein,
+    bag.quality_mineral_matter,
+    bag.quality_digestibility,
+  ];
+  return numericFields.some(
+    (val) => val !== null && val !== undefined && !isNaN(Number(val)) && Number(val) > 0
+  );
+};
+
+const renderClassificationBadge = (
+  classification?: string | null,
+  bag?: FfgInventoryBag | null
+) => {
   const upper = (classification || '').trim().toUpperCase();
   if (upper === 'STANDARD') {
     return (
@@ -90,6 +109,13 @@ const renderClassificationBadge = (classification?: string | null) => {
     return (
       <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-[10px] font-bold font-mono bg-amber-100 text-amber-800 border border-amber-300">
         {upper}
+      </span>
+    );
+  }
+  if (hasBagNumericQuality(bag)) {
+    return (
+      <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-[10px] font-bold font-mono bg-blue-100 text-blue-800 border border-blue-200">
+        Com Laudo
       </span>
     );
   }
@@ -155,14 +181,15 @@ export const InventoryModule: React.FC<InventoryModuleProps> = ({
 
   // File refs & loading flags
   const excelInputRef = useRef<HTMLInputElement>(null);
-  const qualityImageInputRef = useRef<HTMLInputElement>(null);
+  const qualityExcelInputRef = useRef<HTMLInputElement>(null);
   const [loadingExcel, setLoadingExcel] = useState<boolean>(false);
-  const [loadingOcr, setLoadingOcr] = useState<boolean>(false);
+  const [loadingQualityExcel, setLoadingQualityExcel] = useState<boolean>(false);
   const [isSavingInventory, setIsSavingInventory] = useState<boolean>(false);
-  const [ocrSummary, setOcrSummary] = useState<{
+  const [qualityImportSummary, setQualityImportSummary] = useState<{
     fileName: string;
-    totalExtracted: number;
+    totalRows: number;
     matchedCount: number;
+    notFoundCount: number;
     unmatchedBarcodes: string[];
   } | null>(null);
 
@@ -235,38 +262,95 @@ export const InventoryModule: React.FC<InventoryModuleProps> = ({
     );
   }, [selectedInventoryId, inventoryBags, draftBags]);
 
-  // ROW 1 KPIs: Resumo do Inventário Selecionado
-  const currentInventoryKpis = useMemo(() => {
-    const totalBags = activeInventoryBags.length;
+  // Data alvo consolidada para o Resumo do Dia
+  const activeSummaryDate = useMemo(() => {
+    if (selectedInventory?.inventory_date) {
+      return selectedInventory.inventory_date.split('T')[0];
+    }
+    return inventoryDate;
+  }, [selectedInventory, inventoryDate]);
+
+  // ROW 1 KPIs: Resumo do Dia (consolida todos os inventários com a mesma data)
+  const daySummaryKpis = useMemo(() => {
+    const sameDayInventories = inventories.filter(
+      (inv) => inv.inventory_date && inv.inventory_date.split('T')[0] === activeSummaryDate
+    );
+    const sameDayIds = new Set(
+      sameDayInventories
+        .map((inv) => (inv.id !== undefined ? String(inv.id) : ''))
+        .filter(Boolean)
+    );
+
+    const savedDayBags = inventoryBags.filter(
+      (b) => b.inventory_id !== undefined && sameDayIds.has(String(b.inventory_id))
+    );
+
+    // Quando estiver criando um novo rascunho naquela data, soma também os bags do rascunho
+    const dayBags = !selectedInventoryId ? [...savedDayBags, ...draftBags] : savedDayBags;
+
+    const totalBags = dayBags.length;
     let viscerasBags = 0;
     let penasBags = 0;
     let totalWeightKg = 0;
+    let viscerasWeightKg = 0;
+    let penasWeightKg = 0;
+    const viscerasList: FfgInventoryBag[] = [];
+    const penasList: FfgInventoryBag[] = [];
 
-    activeInventoryBags.forEach((bag) => {
+    dayBags.forEach((bag) => {
       const weight = Number(bag.weight_kg || 0);
       totalWeightKg += weight;
-      const type = selectedInventory
-        ? selectedInventory.flour_type
-        : flourType || inferBagFlourType(bag, inventoryMap);
-      const descUpper = (bag.product_description || '').toUpperCase();
-      if (descUpper.includes('PENA')) {
+
+      let type: FlourType;
+      if (bag.inventory_id !== undefined && bag.inventory_id !== null) {
+        type = inferBagFlourType(bag, inventoryMap);
+      } else {
+        const descUpper = (bag.product_description || '').toUpperCase();
+        if (descUpper.includes('PENA')) {
+          type = 'Penas';
+        } else if (descUpper.includes('VISC') || descUpper.includes('VÍSC')) {
+          type = 'Vísceras';
+        } else {
+          type = flourType;
+        }
+      }
+
+      if (type === 'Penas') {
         penasBags += 1;
-      } else if (descUpper.includes('VISC') || descUpper.includes('VÍSC')) {
-        viscerasBags += 1;
-      } else if (type === 'Penas') {
-        penasBags += 1;
+        penasWeightKg += weight;
+        penasList.push(bag);
       } else {
         viscerasBags += 1;
+        viscerasWeightKg += weight;
+        viscerasList.push(bag);
       }
     });
+
+    const viscerasInventories = sameDayInventories.filter((i) => i.flour_type === 'Vísceras');
+    const penasInventories = sameDayInventories.filter((i) => i.flour_type === 'Penas');
 
     return {
       totalBags,
       viscerasBags,
       penasBags,
       totalWeightKg,
+      viscerasWeightKg,
+      penasWeightKg,
+      viscerasList,
+      penasList,
+      viscerasInventories,
+      penasInventories,
+      dayInventoryCount: sameDayInventories.length,
     };
-  }, [activeInventoryBags, selectedInventory, flourType, inventoryMap]);
+  }, [
+    inventories,
+    inventoryBags,
+    activeSummaryDate,
+    selectedInventoryId,
+    draftBags,
+    inventoryMap,
+    flourType,
+  ]);
 
   // ROW 2 KPIs: Resumo Geral do Estoque (all saved bags across all inventories)
   const globalStockKpis = useMemo(() => {
@@ -313,7 +397,7 @@ export const InventoryModule: React.FC<InventoryModuleProps> = ({
       const cls = (b.quality_classification || '').trim().toUpperCase();
       if (cls === 'STANDARD') standardCount += 1;
       else if (cls === 'COMERCIAL') comercialCount += 1;
-      else pendingCount += 1;
+      else if (!hasBagNumericQuality(b)) pendingCount += 1;
 
       if (b.quality_crude_protein !== null && b.quality_crude_protein !== undefined) {
         sumProtein += Number(b.quality_crude_protein);
@@ -355,7 +439,8 @@ export const InventoryModule: React.FC<InventoryModuleProps> = ({
       const cls = (bag.quality_classification || '').trim().toUpperCase();
       if (qualityClassFilter === 'STANDARD' && cls !== 'STANDARD') return false;
       if (qualityClassFilter === 'COMERCIAL' && cls !== 'COMERCIAL') return false;
-      if (qualityClassFilter === 'Sem Laudo' && cls !== '') return false;
+      if (qualityClassFilter === 'Com Laudo' && (cls !== '' || !hasBagNumericQuality(bag))) return false;
+      if (qualityClassFilter === 'Sem Laudo' && (cls !== '' || hasBagNumericQuality(bag))) return false;
 
       if (qualityFlourFilter !== 'Todas') {
         const type = inferBagFlourType(bag, inventoryMap);
@@ -380,7 +465,7 @@ export const InventoryModule: React.FC<InventoryModuleProps> = ({
     setParticipants('');
     setDraftBags([]);
     setIsEditingHeader(true);
-    setOcrSummary(null);
+    setQualityImportSummary(null);
   };
 
   // Start editing an existing inventory
@@ -391,7 +476,7 @@ export const InventoryModule: React.FC<InventoryModuleProps> = ({
     setInventoryTime((inv.inventory_time || '00:00').slice(0, 5));
     setParticipants(inv.participants || '');
     setIsEditingHeader(true);
-    setOcrSummary(null);
+    setQualityImportSummary(null);
   };
 
   // Save new inventory (header + draftBags) or update existing inventory header
@@ -583,83 +668,45 @@ export const InventoryModule: React.FC<InventoryModuleProps> = ({
     }
   };
 
-  // Upload Quality Image -> Gemini Vision OCR -> Match Barcodes -> Update Supabase / Draft
-  const handleQualityImageChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+  // Import Quality Excel/CSV -> Exact Barcode Match -> Update Supabase / Draft
+  const handleQualityExcelChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
 
-    setLoadingOcr(true);
-    setOcrSummary(null);
+    setLoadingQualityExcel(true);
+    setQualityImportSummary(null);
     try {
-      const imageBase64 = await new Promise<string>((resolve, reject) => {
-        const reader = new FileReader();
-        reader.onload = () => resolve(String(reader.result || ''));
-        reader.onerror = () => reject(new Error('Não foi possível ler o arquivo de imagem.'));
-        reader.readAsDataURL(file);
-      });
+      const qualityRows = await parseQualityReportExcel(file);
 
-      const response = await fetch('/api/inventory/parse-quality-image', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          imageBase64,
-          mimeType: file.type || 'image/png',
-        }),
-      });
-
-      const result = await response.json();
-      if (!response.ok) {
-        throw new Error(result?.error || 'Falha ao analisar imagem com Gemini Vision.');
-      }
-
-      const extractedRows: ParsedQualityRow[] = Array.isArray(result.rows) ? result.rows : [];
-      if (extractedRows.length === 0) {
-        showToast(
-          'warning',
-          'Nenhuma Linha Encontrada',
-          'O OCR não identificou linhas com N° Código de Barras na imagem anexada.'
-        );
-        return;
-      }
-
-      // Build lookup map by normalized barcode (exact + stripped leading zeroes fallback)
-      const ocrLookup = new Map<string, ParsedQualityRow>();
-      extractedRows.forEach((row) => {
+      // Build exact lookup map by normalized barcode (last row wins if duplicated in file)
+      const qualityLookup = new Map<string, ParsedQualityRow>();
+      qualityRows.forEach((row) => {
         const code = normalizeBarcode(row.barcode);
         if (code) {
-          ocrLookup.set(code, row);
-          const stripped = code.replace(/^0+/, '');
-          if (stripped && !ocrLookup.has(stripped)) {
-            ocrLookup.set(stripped, row);
-          }
+          qualityLookup.set(code, row);
         }
       });
 
-      const findMatch = (barcode: string): ParsedQualityRow | undefined => {
-        const clean = normalizeBarcode(barcode);
-        if (!clean) return undefined;
-        return ocrLookup.get(clean) || ocrLookup.get(clean.replace(/^0+/, ''));
-      };
-
-      const matchedBarcodes = new Set<string>();
-      let updatedCount = 0;
+      const matchedRowBarcodes = new Set<string>();
+      let matchedBagsCount = 0;
 
       // 1. Update draftBags if creating a new inventory
       if (!selectedInventoryId && draftBags.length > 0) {
         const updatedDraft = draftBags.map((bag) => {
-          const match = findMatch(bag.barcode);
+          const bagCode = normalizeBarcode(bag.barcode);
+          const match = qualityLookup.get(bagCode);
           if (!match) return bag;
-          updatedCount += 1;
-          matchedBarcodes.add(normalizeBarcode(match.barcode));
+          matchedBagsCount += 1;
+          matchedRowBarcodes.add(bagCode);
           return {
             ...bag,
-            quality_acidity: match.acidity,
-            quality_peroxide: match.peroxide,
-            quality_moisture: match.moisture,
-            quality_ether_extract: match.ether_extract,
-            quality_crude_protein: match.crude_protein,
-            quality_mineral_matter: match.mineral_matter,
-            quality_digestibility: match.digestibility,
+            quality_acidity: match.acidity ?? null,
+            quality_peroxide: match.peroxide ?? null,
+            quality_moisture: match.moisture ?? null,
+            quality_ether_extract: match.ether_extract ?? null,
+            quality_crude_protein: match.crude_protein ?? null,
+            quality_mineral_matter: match.mineral_matter ?? null,
+            quality_digestibility: match.digestibility ?? null,
             quality_classification: match.classification
               ? match.classification.trim().toUpperCase()
               : null,
@@ -668,73 +715,82 @@ export const InventoryModule: React.FC<InventoryModuleProps> = ({
         setDraftBags(updatedDraft);
       }
 
-      // 2. Also match and update saved bags in Supabase (across stock/active inventory)
-      const savedMatches = inventoryBags
-        .map((bag) => ({ bag, match: findMatch(bag.barcode) }))
-        .filter((entry): entry is { bag: FfgInventoryBag; match: ParsedQualityRow } =>
-          Boolean(entry.match && entry.bag.id !== undefined)
-        );
+      // 2. Match and update saved bags in Supabase (ffg_inventory_bags)
+      const savedMatches: { bag: FfgInventoryBag; match: ParsedQualityRow; barcode: string }[] = [];
+      inventoryBags.forEach((bag) => {
+        const bagCode = normalizeBarcode(bag.barcode);
+        if (!bagCode || bag.id === undefined) return;
+        const match = qualityLookup.get(bagCode);
+        if (match) {
+          savedMatches.push({ bag, match, barcode: bagCode });
+        }
+      });
 
       if (savedMatches.length > 0) {
-        await Promise.all(
-          savedMatches.map(async ({ bag, match }) => {
-            const { error } = await supabase
-              .from('ffg_inventory_bags')
-              .update({
-                quality_acidity: match.acidity,
-                quality_peroxide: match.peroxide,
-                quality_moisture: match.moisture,
-                quality_ether_extract: match.ether_extract,
-                quality_crude_protein: match.crude_protein,
-                quality_mineral_matter: match.mineral_matter,
-                quality_digestibility: match.digestibility,
-                quality_classification: match.classification
-                  ? match.classification.trim().toUpperCase()
-                  : null,
-              })
-              .eq('id', bag.id);
+        const chunkSize = 10;
+        for (let i = 0; i < savedMatches.length; i += chunkSize) {
+          const chunk = savedMatches.slice(i, i + chunkSize);
+          await Promise.all(
+            chunk.map(async ({ bag, match, barcode }) => {
+              const { error } = await supabase
+                .from('ffg_inventory_bags')
+                .update({
+                  quality_acidity: match.acidity ?? null,
+                  quality_peroxide: match.peroxide ?? null,
+                  quality_moisture: match.moisture ?? null,
+                  quality_ether_extract: match.ether_extract ?? null,
+                  quality_crude_protein: match.crude_protein ?? null,
+                  quality_mineral_matter: match.mineral_matter ?? null,
+                  quality_digestibility: match.digestibility ?? null,
+                  quality_classification: match.classification
+                    ? match.classification.trim().toUpperCase()
+                    : null,
+                })
+                .eq('id', bag.id);
 
-            if (error) throw error;
-            updatedCount += 1;
-            matchedBarcodes.add(normalizeBarcode(match.barcode));
-          })
-        );
+              if (error) throw error;
+              matchedBagsCount += 1;
+              matchedRowBarcodes.add(barcode);
+            })
+          );
+        }
         await onReload();
       }
 
-      const unmatchedBarcodes = extractedRows
+      const unmatchedBarcodes = qualityRows
         .map((r) => normalizeBarcode(r.barcode))
-        .filter((code) => code && !matchedBarcodes.has(code));
+        .filter((code) => code && !matchedRowBarcodes.has(code));
 
-      setOcrSummary({
+      const notFoundCount = unmatchedBarcodes.length;
+
+      setQualityImportSummary({
         fileName: file.name,
-        totalExtracted: extractedRows.length,
-        matchedCount: updatedCount,
+        totalRows: qualityRows.length,
+        matchedCount: matchedBagsCount,
+        notFoundCount,
         unmatchedBarcodes,
       });
 
-      if (updatedCount > 0) {
-        showToast(
-          'success',
-          'Laudos de Qualidade Vinculados',
-          `${updatedCount} bag(s) atualizados automaticamente a partir de ${extractedRows.length} linha(s) lida(s) na imagem.`
-        );
+      const summaryText = `${matchedBagsCount} laudos vinculados com sucesso. ${notFoundCount} códigos não encontrados no estoque atual.`;
+
+      if (matchedBagsCount > 0) {
+        showToast('success', 'Laudos de Qualidade Importados', summaryText);
       } else {
-        showToast(
-          'info',
-          'OCR Concluído Sem Correspondência',
-          `${extractedRows.length} linha(s) lida(s), mas nenhum Código de Barra correspondeu aos bags cadastrados.`
-        );
+        showToast('info', 'Importação Concluída Sem Correspondência', summaryText);
       }
     } catch (err: any) {
-      showToast(
-        'error',
-        'Erro na Leitura de Qualidade (Gemini Vision)',
-        err?.message || 'Falha ao processar a imagem.'
-      );
+      if (err?.message && err?.code) {
+        showSupabaseError('Falha ao Gravar Laudos no Supabase', err);
+      } else {
+        showToast(
+          'error',
+          'Falha na Importação de Qualidade',
+          err?.message || 'Erro ao ler a planilha de Qualidade.'
+        );
+      }
     } finally {
-      setLoadingOcr(false);
-      if (qualityImageInputRef.current) qualityImageInputRef.current.value = '';
+      setLoadingQualityExcel(false);
+      if (qualityExcelInputRef.current) qualityExcelInputRef.current.value = '';
     }
   };
 
@@ -881,65 +937,92 @@ export const InventoryModule: React.FC<InventoryModuleProps> = ({
 
   return (
     <div className="space-y-6">
+      <input
+        type="file"
+        ref={qualityExcelInputRef}
+        accept=".xlsx,.xls,.csv"
+        onChange={handleQualityExcelChange}
+        className="hidden"
+        id="inventory-quality-excel-input"
+      />
+
+      {/* CABEÇALHO EXCLUSIVO DE IMPRESSÃO / PDF */}
+      <div className="hidden print:flex items-center justify-between border-b-2 border-slate-800 pb-3 mb-4">
+        <div>
+          <div className="text-xs font-bold uppercase tracking-widest text-slate-600 font-mono">
+            União Avícola Agroindustrial &bull; FFG-NM
+          </div>
+          <h1 className="text-xl font-black text-slate-900 uppercase tracking-tight">
+            Relatório Consolidado de Inventário — {formatDateDDMMYYYY(activeSummaryDate)}
+          </h1>
+        </div>
+        <div className="text-right text-xs font-mono text-slate-600">
+          <div>Emitido em: {new Date().toLocaleDateString('pt-BR')} às {new Date().toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}</div>
+          <div>{daySummaryKpis.dayInventoryCount} inventário(s) no dia</div>
+        </div>
+      </div>
 
       {/* ========================================================================= */}
-      {/* TOP SUMMARY CARDS (ROW 1: INVENTÁRIO SELECIONADO | ROW 2: ESTOQUE GERAL) */}
+      {/* TOP SUMMARY CARDS (ROW 1: RESUMO DO DIA | ROW 2: ESTOQUE GERAL) */}
       {/* ========================================================================= */}
-      <div className="space-y-3">
-        {/* Row 1: Resumo do Inventário Selecionado */}
+      <div className="space-y-3 print:space-y-4">
+        {/* Row 1: Resumo do Dia (Consolidado por Data) */}
         <div className="space-y-2">
           <div className="flex items-center justify-between px-1">
             <span className="text-[11px] font-bold uppercase tracking-wider text-emerald-700 font-mono flex items-center gap-1.5">
               <ClipboardList className="w-3.5 h-3.5" />
-              {selectedInventory
-                ? `Resumo do Inventário Selecionado (${formatDateDDMMYYYY(selectedInventory.inventory_date)} • ${selectedInventory.flour_type})`
-                : 'Resumo do Novo Inventário (Rascunho)'}
+              {`RESUMO DO DIA (${formatDateDDMMYYYY(activeSummaryDate)})`}
+              {daySummaryKpis.dayInventoryCount > 0 && (
+                <span className="text-slate-500 font-normal">
+                  &bull; {daySummaryKpis.dayInventoryCount} inventário(s) consolidado(s)
+                </span>
+              )}
             </span>
           </div>
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-            <div className="bg-white border border-emerald-200 rounded-2xl p-4 shadow-sm">
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 print:grid-cols-4 gap-4 print:gap-3">
+            <div className="bg-white border border-emerald-200 print:border-slate-400 rounded-2xl p-4 shadow-sm print:shadow-none">
               <div className="text-[10px] font-bold uppercase tracking-wider text-emerald-700 font-mono">
-                Total de Bags (Inventário)
+                Total de Bags (Dia)
               </div>
               <div className="mt-1.5 text-3xl font-black font-mono text-emerald-700">
-                {currentInventoryKpis.totalBags}
+                {daySummaryKpis.totalBags}
               </div>
               <div className="mt-1 text-[10px] text-slate-500 font-mono">
-                Bags listados neste inventário
+                Soma dos inventários do dia
               </div>
             </div>
 
-            <div className="bg-white border border-slate-200 rounded-2xl p-4 shadow-sm">
+            <div className="bg-white border border-slate-200 print:border-slate-400 rounded-2xl p-4 shadow-sm print:shadow-none">
               <div className="text-[10px] font-bold uppercase tracking-wider text-slate-600 font-mono">
                 Bags Farinha de Vísceras
               </div>
               <div className="mt-1.5 text-3xl font-black font-mono text-slate-900">
-                {currentInventoryKpis.viscerasBags}
+                {daySummaryKpis.viscerasBags}
               </div>
               <div className="mt-1 text-[10px] text-slate-500 font-mono">
-                No inventário atual
+                Total de vísceras no dia
               </div>
             </div>
 
-            <div className="bg-white border border-slate-200 rounded-2xl p-4 shadow-sm">
+            <div className="bg-white border border-slate-200 print:border-slate-400 rounded-2xl p-4 shadow-sm print:shadow-none">
               <div className="text-[10px] font-bold uppercase tracking-wider text-slate-600 font-mono">
                 Bags Farinha de Penas
               </div>
               <div className="mt-1.5 text-3xl font-black font-mono text-slate-900">
-                {currentInventoryKpis.penasBags}
+                {daySummaryKpis.penasBags}
               </div>
               <div className="mt-1 text-[10px] text-slate-500 font-mono">
-                No inventário atual
+                Total de penas no dia
               </div>
             </div>
 
-            <div className="bg-white border border-slate-200 rounded-2xl p-4 shadow-sm">
+            <div className="bg-white border border-slate-200 print:border-slate-400 rounded-2xl p-4 shadow-sm print:shadow-none">
               <div className="text-[10px] font-bold uppercase tracking-wider text-slate-600 font-mono">
-                Peso Total (Inventário)
+                Peso Total (Dia)
               </div>
               <div className="mt-1.5 flex items-baseline gap-1.5">
                 <span className="text-2xl font-black font-mono text-slate-900">
-                  {currentInventoryKpis.totalWeightKg.toLocaleString('pt-BR', {
+                  {daySummaryKpis.totalWeightKg.toLocaleString('pt-BR', {
                     minimumFractionDigits: 2,
                     maximumFractionDigits: 2,
                   })}
@@ -947,11 +1030,11 @@ export const InventoryModule: React.FC<InventoryModuleProps> = ({
                 <span className="text-xs text-slate-500 font-mono">kg</span>
               </div>
               <div className="mt-1 text-[10px] text-slate-500 font-mono">
-                {(currentInventoryKpis.totalWeightKg / 1000).toLocaleString('pt-BR', {
+                {(daySummaryKpis.totalWeightKg / 1000).toLocaleString('pt-BR', {
                   minimumFractionDigits: 2,
                   maximumFractionDigits: 2,
                 })}{' '}
-                toneladas
+                toneladas no dia
               </div>
             </div>
           </div>
@@ -965,8 +1048,8 @@ export const InventoryModule: React.FC<InventoryModuleProps> = ({
               Resumo Geral do Estoque Consolidado ({inventories.length} inventário(s) gravado(s))
             </span>
           </div>
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-            <div className="bg-white border border-amber-200 rounded-2xl p-4 shadow-sm">
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 print:grid-cols-4 gap-4 print:gap-3">
+            <div className="bg-white border border-amber-200 print:border-slate-400 rounded-2xl p-4 shadow-sm print:shadow-none">
               <div className="text-[10px] font-bold uppercase tracking-wider text-amber-700 font-mono">
                 Total de Bags em Estoque
               </div>
@@ -978,7 +1061,7 @@ export const InventoryModule: React.FC<InventoryModuleProps> = ({
               </div>
             </div>
 
-            <div className="bg-white border border-slate-200 rounded-2xl p-4 shadow-sm">
+            <div className="bg-white border border-slate-200 print:border-slate-400 rounded-2xl p-4 shadow-sm print:shadow-none">
               <div className="text-[10px] font-bold uppercase tracking-wider text-slate-600 font-mono">
                 Bags de Vísceras em Estoque
               </div>
@@ -990,7 +1073,7 @@ export const InventoryModule: React.FC<InventoryModuleProps> = ({
               </div>
             </div>
 
-            <div className="bg-white border border-slate-200 rounded-2xl p-4 shadow-sm">
+            <div className="bg-white border border-slate-200 print:border-slate-400 rounded-2xl p-4 shadow-sm print:shadow-none">
               <div className="text-[10px] font-bold uppercase tracking-wider text-slate-600 font-mono">
                 Bags de Penas em Estoque
               </div>
@@ -1002,7 +1085,7 @@ export const InventoryModule: React.FC<InventoryModuleProps> = ({
               </div>
             </div>
 
-            <div className="bg-white border border-slate-200 rounded-2xl p-4 shadow-sm">
+            <div className="bg-white border border-slate-200 print:border-slate-400 rounded-2xl p-4 shadow-sm print:shadow-none">
               <div className="text-[10px] font-bold uppercase tracking-wider text-slate-600 font-mono">
                 Peso Total Acumulado
               </div>
@@ -1028,9 +1111,9 @@ export const InventoryModule: React.FC<InventoryModuleProps> = ({
       </div>
 
       {/* ========================================================================= */}
-      {/* SUB-TABS NAVIGATION */}
+      {/* SUB-TABS NAVIGATION + EXPORTAR PDF */}
       {/* ========================================================================= */}
-      <div className="bg-white border border-slate-200 rounded-2xl p-2 shadow-sm flex flex-wrap items-center justify-between gap-3">
+      <div className="bg-white border border-slate-200 rounded-2xl p-2 shadow-sm flex flex-wrap items-center justify-between gap-3 print:hidden">
         <div className="flex items-center gap-1.5 bg-slate-100 p-1 rounded-xl border border-slate-200">
           <button
             type="button"
@@ -1059,24 +1142,36 @@ export const InventoryModule: React.FC<InventoryModuleProps> = ({
           </button>
         </div>
 
-        <button
-          type="button"
-          onClick={() => {
-            setSubTab('bags');
-            handleStartNewInventory();
-          }}
-          className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold flex items-center gap-1.5 shadow-sm transition-colors"
-        >
-          <Plus className="w-4 h-4" />
-          <span>Novo Inventário</span>
-        </button>
+        <div className="flex items-center gap-2">
+          <button
+            type="button"
+            onClick={() => window.print()}
+            className="px-4 py-2 bg-slate-800 hover:bg-slate-900 text-white rounded-xl text-xs font-bold flex items-center gap-1.5 shadow-sm transition-colors"
+            title="Imprimir / Salvar Relatório Consolidado em PDF"
+          >
+            <Printer className="w-4 h-4" />
+            <span>Exportar PDF</span>
+          </button>
+
+          <button
+            type="button"
+            onClick={() => {
+              setSubTab('bags');
+              handleStartNewInventory();
+            }}
+            className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold flex items-center gap-1.5 shadow-sm transition-colors"
+          >
+            <Plus className="w-4 h-4" />
+            <span>Novo Inventário</span>
+          </button>
+        </div>
       </div>
 
       {/* ========================================================================= */}
-      {/* SUB-TAB 1: LISTA DE BAGS (INVENTÁRIO) */}
+      {/* SUB-TAB 1: LISTA DE BAGS (INVENTÁRIO) - MODO INTERATIVO EM TELA */}
       {/* ========================================================================= */}
       {subTab === 'bags' && (
-        <div className="space-y-6">
+        <div className="space-y-6 print:hidden">
 
           {/* Saved Inventories Strip */}
           {inventories.length > 0 && (
@@ -1340,65 +1435,58 @@ export const InventoryModule: React.FC<InventoryModuleProps> = ({
               </div>
             </div>
 
-            {/* Card B: Vinculação Automática de Qualidade via Imagem (Gemini Vision OCR) */}
+            {/* Card B: Importar Laudos de Qualidade (Excel/CSV) */}
             <div className="bg-white border border-slate-200 rounded-2xl p-5 shadow-sm space-y-4">
               <div className="flex flex-wrap items-center justify-between gap-3 pb-3 border-b border-slate-200">
                 <div className="flex items-center gap-2.5">
                   <div className="w-8 h-8 rounded-lg bg-amber-50 border border-amber-200 flex items-center justify-center text-amber-600">
-                    <Camera className="w-4 h-4" />
+                    <FlaskConical className="w-4 h-4" />
                   </div>
                   <div>
                     <h3 className="text-sm font-bold text-slate-900">
-                      2. Vincular Qualidade via Imagem do Relatório (OCR)
+                      2. Importar Laudos de Qualidade (Excel/CSV)
                     </h3>
                     <p className="text-[11px] text-slate-500">
-                      Cruza automaticamente o N° Código de Barras da foto com os bags e grava os laudos
+                      Cruza o N° CODIGO DE BARRAS da planilha consolidada com o estoque e grava os laudos
                     </p>
                   </div>
                 </div>
               </div>
 
               <div className="flex flex-wrap items-center gap-3">
-                <input
-                  type="file"
-                  ref={qualityImageInputRef}
-                  accept="image/*"
-                  onChange={handleQualityImageChange}
-                  className="hidden"
-                  id="inventory-quality-image-input"
-                />
                 <label
-                  htmlFor="inventory-quality-image-input"
+                  htmlFor="inventory-quality-excel-input"
                   className="cursor-pointer px-4 py-2.5 bg-amber-50 hover:bg-amber-100 border border-amber-300 text-amber-800 rounded-xl text-xs font-bold flex items-center gap-2 transition-colors shadow-2xs"
                 >
-                  {loadingOcr ? (
+                  {loadingQualityExcel ? (
                     <RefreshCw className="w-4 h-4 animate-spin" />
                   ) : (
-                    <FlaskConical className="w-4 h-4" />
+                    <Upload className="w-4 h-4" />
                   )}
                   <span>
-                    {loadingOcr
-                      ? 'Lendo Relatório com Gemini Vision...'
-                      : 'Anexar Imagem do Relatório de Qualidade'}
+                    {loadingQualityExcel
+                      ? 'Importando Laudos...'
+                      : 'Importar Laudos de Qualidade (Excel/CSV)'}
                   </span>
                 </label>
               </div>
 
-              {ocrSummary && (
-                <div className="p-3 rounded-xl bg-slate-50 border border-slate-200 text-xs space-y-1">
-                  <div className="flex items-center justify-between font-semibold text-slate-800">
+              {qualityImportSummary && (
+                <div className="p-3 rounded-xl bg-emerald-50 border border-emerald-200 text-xs space-y-1">
+                  <div className="flex items-center justify-between gap-2 font-semibold text-emerald-900">
                     <span className="flex items-center gap-1.5 truncate">
-                      <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
-                      {ocrSummary.fileName}
-                    </span>
-                    <span className="font-mono text-emerald-700 shrink-0">
-                      {ocrSummary.matchedCount} / {ocrSummary.totalExtracted} vinculado(s)
+                      <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
+                      {qualityImportSummary.matchedCount} laudos vinculados com sucesso.{' '}
+                      {qualityImportSummary.notFoundCount} códigos não encontrados no estoque atual.
                     </span>
                   </div>
-                  {ocrSummary.unmatchedBarcodes.length > 0 && (
-                    <p className="text-[10px] text-slate-500 font-mono">
-                      Códigos sem bag correspondente: {ocrSummary.unmatchedBarcodes.slice(0, 6).join(', ')}
-                      {ocrSummary.unmatchedBarcodes.length > 6 ? '...' : ''}
+                  <div className="text-[11px] text-emerald-800 font-mono">
+                    Arquivo: {qualityImportSummary.fileName} ({qualityImportSummary.totalRows} linha(s) lida(s))
+                  </div>
+                  {qualityImportSummary.unmatchedBarcodes.length > 0 && (
+                    <p className="text-[10px] text-slate-600 font-mono">
+                      Códigos não encontrados: {qualityImportSummary.unmatchedBarcodes.slice(0, 6).join(', ')}
+                      {qualityImportSummary.unmatchedBarcodes.length > 6 ? '...' : ''}
                     </p>
                   )}
                 </div>
@@ -1607,7 +1695,7 @@ export const InventoryModule: React.FC<InventoryModuleProps> = ({
                     <th className="px-3 py-2.5 text-center">Período</th>
                     <th className="px-3 py-2.5 text-center">Peso (kg)</th>
                     <th className="px-3 py-2.5 text-center">Código de Barra</th>
-                    <th className="px-3 py-2.5 text-center">Qualidade / Ações</th>
+                    <th className="px-3 py-2.5 text-center print:hidden">Qualidade / Ações</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-200 font-mono text-slate-800">
@@ -1652,9 +1740,9 @@ export const InventoryModule: React.FC<InventoryModuleProps> = ({
                         <td className="px-3 py-2.5 text-center font-semibold text-slate-900 whitespace-nowrap">
                           {bag.barcode}
                         </td>
-                        <td className="px-3 py-2.5 text-center whitespace-nowrap">
+                        <td className="px-3 py-2.5 text-center whitespace-nowrap print:hidden">
                           <div className="flex items-center justify-center gap-1.5">
-                            {renderClassificationBadge(bag.quality_classification)}
+                            {renderClassificationBadge(bag.quality_classification, bag)}
                             <button
                               type="button"
                               onClick={() => setInfoModalBag(bag)}
@@ -1703,7 +1791,7 @@ export const InventoryModule: React.FC<InventoryModuleProps> = ({
       {/* SUB-TAB 2: QUALIDADE DO ESTOQUE */}
       {/* ========================================================================= */}
       {subTab === 'quality' && (
-        <div className="space-y-6">
+        <div className="space-y-6 print:hidden">
 
           {/* Quality Distribution Cards */}
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
@@ -1814,6 +1902,7 @@ export const InventoryModule: React.FC<InventoryModuleProps> = ({
                   <option value="Todas">Todas</option>
                   <option value="STANDARD">STANDARD</option>
                   <option value="COMERCIAL">COMERCIAL</option>
+                  <option value="Com Laudo">Com Laudo</option>
                   <option value="Sem Laudo">Sem Laudo</option>
                 </select>
               </div>
@@ -1845,15 +1934,15 @@ export const InventoryModule: React.FC<InventoryModuleProps> = ({
 
             <div>
               <label
-                htmlFor="inventory-quality-image-input"
+                htmlFor="inventory-quality-excel-input"
                 className="cursor-pointer px-3.5 py-2 bg-amber-50 hover:bg-amber-100 border border-amber-300 text-amber-800 rounded-xl text-xs font-bold flex items-center gap-2 transition-colors"
               >
-                {loadingOcr ? (
+                {loadingQualityExcel ? (
                   <RefreshCw className="w-3.5 h-3.5 animate-spin" />
                 ) : (
-                  <Camera className="w-3.5 h-3.5" />
+                  <Upload className="w-3.5 h-3.5" />
                 )}
-                <span>Atualizar Laudos via Imagem</span>
+                <span>Importar Laudos de Qualidade (Excel/CSV)</span>
               </label>
             </div>
           </div>
@@ -1937,7 +2026,7 @@ export const InventoryModule: React.FC<InventoryModuleProps> = ({
                           {formatQualityNumber(bag.quality_digestibility, '%')}
                         </td>
                         <td className="px-2.5 py-2.5 text-center whitespace-nowrap">
-                          {renderClassificationBadge(bag.quality_classification)}
+                          {renderClassificationBadge(bag.quality_classification, bag)}
                         </td>
                         <td className="px-2.5 py-2.5 text-center whitespace-nowrap">
                           <div className="flex items-center justify-center gap-1">
@@ -1971,6 +2060,221 @@ export const InventoryModule: React.FC<InventoryModuleProps> = ({
           </div>
         </div>
       )}
+
+      {/* ========================================================================= */}
+      {/* RELATÓRIO UNIFICADO PARA IMPRESSÃO / PDF (AGRUPADO POR TIPO DE FARINHA) */}
+      {/* ========================================================================= */}
+      <div className="hidden print:block space-y-6 mt-4">
+        {daySummaryKpis.viscerasList.length === 0 && daySummaryKpis.penasList.length === 0 ? (
+          <div className="border border-slate-400 rounded-xl p-6 text-center text-sm text-slate-700">
+            Nenhum bag registrado para a data {formatDateDDMMYYYY(activeSummaryDate)}.
+          </div>
+        ) : (
+          <>
+            {daySummaryKpis.viscerasList.length > 0 && (
+              <section className="bg-white border border-slate-400 rounded-xl p-4 print:shadow-none space-y-3">
+                <div className="flex items-center justify-between border-b border-slate-400 pb-2">
+                  <div>
+                    <h3 className="text-base font-black text-slate-900 uppercase tracking-wide">
+                      Farinha de Vísceras — {formatDateDDMMYYYY(activeSummaryDate)}
+                    </h3>
+                    {daySummaryKpis.viscerasInventories.length > 0 && (
+                      <p className="text-xs text-slate-700 font-mono">
+                        {daySummaryKpis.viscerasInventories
+                          .map(
+                            (inv) =>
+                              `Horário: ${(inv.inventory_time || '').slice(0, 5)} | Participantes: ${inv.participants}`
+                          )
+                          .join(' • ')}
+                      </p>
+                    )}
+                  </div>
+                  <div className="text-right text-xs font-mono font-bold text-slate-900">
+                    <div>{daySummaryKpis.viscerasList.length} bag(s)</div>
+                    <div>
+                      {daySummaryKpis.viscerasWeightKg.toLocaleString('pt-BR', {
+                        minimumFractionDigits: 2,
+                        maximumFractionDigits: 2,
+                      })}{' '}
+                      kg
+                    </div>
+                  </div>
+                </div>
+
+                <table className="w-full text-center border-collapse border border-slate-400 print:text-sm print:shadow-none">
+                  <thead className="bg-slate-100 text-slate-900 uppercase font-mono">
+                    <tr>
+                      <th className="px-2 py-2 text-center border border-slate-400">Código</th>
+                      <th className="px-2 py-2 text-center border border-slate-400">Descrição</th>
+                      <th className="px-2 py-2 text-center border border-slate-400">Cód. Bag</th>
+                      <th className="px-2 py-2 text-center border border-slate-400">Data Prod.</th>
+                      <th className="px-2 py-2 text-center border border-slate-400">Data Apont.</th>
+                      <th className="px-2 py-2 text-center border border-slate-400">Hora</th>
+                      <th className="px-2 py-2 text-center border border-slate-400">Per.</th>
+                      <th className="px-2 py-2 text-center border border-slate-400">Peso (kg)</th>
+                      <th className="px-2 py-2 text-center border border-slate-400">Cód. Barra</th>
+                    </tr>
+                  </thead>
+                  <tbody className="font-mono text-slate-900">
+                    {daySummaryKpis.viscerasList.map((bag, idx) => (
+                      <tr key={bag.id ?? `print-visc-${idx}`}>
+                        <td className="px-2 py-1.5 text-center border border-slate-300 font-semibold">
+                          {bag.product_code}
+                        </td>
+                        <td className="px-2 py-1.5 text-center border border-slate-300 font-sans">
+                          {bag.product_description}
+                        </td>
+                        <td className="px-2 py-1.5 text-center border border-slate-300 font-bold">
+                          {bag.bag_code}
+                        </td>
+                        <td className="px-2 py-1.5 text-center border border-slate-300 whitespace-nowrap">
+                          {formatDateDDMMYYYY(bag.production_date)}
+                        </td>
+                        <td className="px-2 py-1.5 text-center border border-slate-300 whitespace-nowrap">
+                          {formatDateDDMMYYYY(bag.posting_date)}
+                        </td>
+                        <td className="px-2 py-1.5 text-center border border-slate-300 whitespace-nowrap">
+                          {(bag.posting_time || '').slice(0, 5)}
+                        </td>
+                        <td className="px-2 py-1.5 text-center border border-slate-300 font-bold">
+                          {bag.period}
+                        </td>
+                        <td className="px-2 py-1.5 text-center border border-slate-300 font-bold whitespace-nowrap">
+                          {Number(bag.weight_kg || 0).toLocaleString('pt-BR', {
+                            minimumFractionDigits: 2,
+                            maximumFractionDigits: 2,
+                          })}
+                        </td>
+                        <td className="px-2 py-1.5 text-center border border-slate-300 font-semibold whitespace-nowrap">
+                          {bag.barcode}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                  <tfoot>
+                    <tr className="bg-slate-100 font-bold font-mono text-slate-900">
+                      <td colSpan={7} className="px-2 py-2 text-center border border-slate-400">
+                        TOTAL FARINHA DE VÍSCERAS ({daySummaryKpis.viscerasList.length} bags)
+                      </td>
+                      <td className="px-2 py-2 text-center border border-slate-400 whitespace-nowrap">
+                        {daySummaryKpis.viscerasWeightKg.toLocaleString('pt-BR', {
+                          minimumFractionDigits: 2,
+                          maximumFractionDigits: 2,
+                        })}{' '}
+                        kg
+                      </td>
+                      <td className="px-2 py-2 text-center border border-slate-400">—</td>
+                    </tr>
+                  </tfoot>
+                </table>
+              </section>
+            )}
+
+            {daySummaryKpis.viscerasList.length > 0 && daySummaryKpis.penasList.length > 0 && (
+              <div className="print:break-before-page" style={{ pageBreakBefore: 'always' }} />
+            )}
+
+            {daySummaryKpis.penasList.length > 0 && (
+              <section className="bg-white border border-slate-400 rounded-xl p-4 print:shadow-none space-y-3">
+                <div className="flex items-center justify-between border-b border-slate-400 pb-2">
+                  <div>
+                    <h3 className="text-base font-black text-slate-900 uppercase tracking-wide">
+                      Farinha de Penas — {formatDateDDMMYYYY(activeSummaryDate)}
+                    </h3>
+                    {daySummaryKpis.penasInventories.length > 0 && (
+                      <p className="text-xs text-slate-700 font-mono">
+                        {daySummaryKpis.penasInventories
+                          .map(
+                            (inv) =>
+                              `Horário: ${(inv.inventory_time || '').slice(0, 5)} | Participantes: ${inv.participants}`
+                          )
+                          .join(' • ')}
+                      </p>
+                    )}
+                  </div>
+                  <div className="text-right text-xs font-mono font-bold text-slate-900">
+                    <div>{daySummaryKpis.penasList.length} bag(s)</div>
+                    <div>
+                      {daySummaryKpis.penasWeightKg.toLocaleString('pt-BR', {
+                        minimumFractionDigits: 2,
+                        maximumFractionDigits: 2,
+                      })}{' '}
+                      kg
+                    </div>
+                  </div>
+                </div>
+
+                <table className="w-full text-center border-collapse border border-slate-400 print:text-sm print:shadow-none">
+                  <thead className="bg-slate-100 text-slate-900 uppercase font-mono">
+                    <tr>
+                      <th className="px-2 py-2 text-center border border-slate-400">Código</th>
+                      <th className="px-2 py-2 text-center border border-slate-400">Descrição</th>
+                      <th className="px-2 py-2 text-center border border-slate-400">Cód. Bag</th>
+                      <th className="px-2 py-2 text-center border border-slate-400">Data Prod.</th>
+                      <th className="px-2 py-2 text-center border border-slate-400">Data Apont.</th>
+                      <th className="px-2 py-2 text-center border border-slate-400">Hora</th>
+                      <th className="px-2 py-2 text-center border border-slate-400">Per.</th>
+                      <th className="px-2 py-2 text-center border border-slate-400">Peso (kg)</th>
+                      <th className="px-2 py-2 text-center border border-slate-400">Cód. Barra</th>
+                    </tr>
+                  </thead>
+                  <tbody className="font-mono text-slate-900">
+                    {daySummaryKpis.penasList.map((bag, idx) => (
+                      <tr key={bag.id ?? `print-penas-${idx}`}>
+                        <td className="px-2 py-1.5 text-center border border-slate-300 font-semibold">
+                          {bag.product_code}
+                        </td>
+                        <td className="px-2 py-1.5 text-center border border-slate-300 font-sans">
+                          {bag.product_description}
+                        </td>
+                        <td className="px-2 py-1.5 text-center border border-slate-300 font-bold">
+                          {bag.bag_code}
+                        </td>
+                        <td className="px-2 py-1.5 text-center border border-slate-300 whitespace-nowrap">
+                          {formatDateDDMMYYYY(bag.production_date)}
+                        </td>
+                        <td className="px-2 py-1.5 text-center border border-slate-300 whitespace-nowrap">
+                          {formatDateDDMMYYYY(bag.posting_date)}
+                        </td>
+                        <td className="px-2 py-1.5 text-center border border-slate-300 whitespace-nowrap">
+                          {(bag.posting_time || '').slice(0, 5)}
+                        </td>
+                        <td className="px-2 py-1.5 text-center border border-slate-300 font-bold">
+                          {bag.period}
+                        </td>
+                        <td className="px-2 py-1.5 text-center border border-slate-300 font-bold whitespace-nowrap">
+                          {Number(bag.weight_kg || 0).toLocaleString('pt-BR', {
+                            minimumFractionDigits: 2,
+                            maximumFractionDigits: 2,
+                          })}
+                        </td>
+                        <td className="px-2 py-1.5 text-center border border-slate-300 font-semibold whitespace-nowrap">
+                          {bag.barcode}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                  <tfoot>
+                    <tr className="bg-slate-100 font-bold font-mono text-slate-900">
+                      <td colSpan={7} className="px-2 py-2 text-center border border-slate-400">
+                        TOTAL FARINHA DE PENAS ({daySummaryKpis.penasList.length} bags)
+                      </td>
+                      <td className="px-2 py-2 text-center border border-slate-400 whitespace-nowrap">
+                        {daySummaryKpis.penasWeightKg.toLocaleString('pt-BR', {
+                          minimumFractionDigits: 2,
+                          maximumFractionDigits: 2,
+                        })}{' '}
+                        kg
+                      </td>
+                      <td className="px-2 py-2 text-center border border-slate-400">—</td>
+                    </tr>
+                  </tfoot>
+                </table>
+              </section>
+            )}
+          </>
+        )}
+      </div>
 
       {/* ========================================================================= */}
       {/* MODAL FLUTUANTE (i): DETALHES DE QUALIDADE DO BAG */}
@@ -2008,7 +2312,7 @@ export const InventoryModule: React.FC<InventoryModuleProps> = ({
                   <span className="font-bold text-slate-900 text-sm">
                     {infoModalBag.product_description}
                   </span>
-                  {renderClassificationBadge(infoModalBag.quality_classification)}
+                  {renderClassificationBadge(infoModalBag.quality_classification, infoModalBag)}
                 </div>
                 <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 pt-2 border-t border-slate-200 font-mono text-[11px] text-slate-600">
                   <div>
@@ -2108,7 +2412,7 @@ export const InventoryModule: React.FC<InventoryModuleProps> = ({
                   <div className="text-[10px] font-bold uppercase text-slate-500 font-mono mb-1">
                     Classificação
                   </div>
-                  {renderClassificationBadge(infoModalBag.quality_classification)}
+                  {renderClassificationBadge(infoModalBag.quality_classification, infoModalBag)}
                 </div>
               </div>
             </div>

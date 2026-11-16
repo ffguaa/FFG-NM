@@ -174,7 +174,7 @@ function AppContent() {
   };
 
   return (
-    <div className="min-h-screen bg-slate-50 text-slate-900 flex flex-col font-sans selection:bg-emerald-500 selection:text-white">
+    <div className="min-h-screen bg-slate-50 text-slate-900 flex flex-col font-sans selection:bg-emerald-500 selection:text-white print:bg-white print:block print:min-h-0">
       
       {/* Top Header */}
       <Header
@@ -184,7 +184,7 @@ function AppContent() {
       />
 
       {/* Main Layout */}
-      <div className="flex-1 flex overflow-hidden">
+      <div className="flex-1 flex overflow-hidden print:block print:overflow-visible">
         
         {/* Left Sidebar */}
         <Sidebar
@@ -196,8 +196,8 @@ function AppContent() {
         />
 
         {/* Dynamic Content Area */}
-        <main ref={mainContainerRef} className="flex-1 overflow-y-auto p-6 md:p-8 bg-slate-50">
-          <div className="max-w-7xl mx-auto">
+        <main ref={mainContainerRef} className="flex-1 overflow-y-auto p-6 md:p-8 bg-slate-50 print:w-full print:m-0 print:p-0 print:overflow-visible print:bg-white">
+          <div className="max-w-7xl mx-auto print:max-w-none print:w-full print:m-0 print:p-0">
             {initialLoading ? (
               <div className="flex flex-col items-center justify-center py-32 space-y-4">
                 <div className="relative">
