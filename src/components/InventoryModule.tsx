@@ -33,7 +33,6 @@ import {
   Printer,
   Ban,
   Filter,
-  Truck,
   Droplets,
   Calendar,
   ChevronLeft,
@@ -394,7 +393,7 @@ export const InventoryModule: React.FC<InventoryModuleProps> = ({
   const [bagProductFilter, setBagProductFilter] = useState<string>('Todos');
   const [bagSearch, setBagSearch] = useState<string>('');
   const [bagClassFilter, setBagClassFilter] = useState<string>('Todos');
-  const [bagBlockFilter, setBagBlockFilter] = useState<'Todos' | 'Ativos' | 'Bloqueados' | 'Expedidos'>('Todos');
+  const [bagBlockFilter, setBagBlockFilter] = useState<'Todos' | 'Ativos' | 'Bloqueados'>('Todos');
 
   // PDF Export Options Modal State
   const [isExportModalOpen, setIsExportModalOpen] = useState<boolean>(false);
@@ -538,7 +537,7 @@ export const InventoryModule: React.FC<InventoryModuleProps> = ({
           .in('inventory_id', invIds);
 
         if (bagsErr) throw bagsErr;
-        setFetchedDayBags((dayBags || []) as FfgInventoryBag[]);
+        setFetchedDayBags(((dayBags || []) as FfgInventoryBag[]).filter((b) => !b.is_dispatched));
       } else {
         setFetchedDayBags([]);
       }
@@ -604,14 +603,16 @@ export const InventoryModule: React.FC<InventoryModuleProps> = ({
     }
   }, [selectedInventory]);
 
-  // Active bags displayed in Sub-tab 1:
+  // Active bags displayed in Sub-tab 1 (strictly excludes dispatched items — only available yard stock):
   // - Creating new inventory -> draftBags
-  // - Specific inventory selected -> that inventory's bags
-  // - Calendar date selected (multiple inventories on day) -> all bags for that day
-  // - General view (default on open) -> all stock bags for immediate yard lookup
+  // - Specific inventory selected -> that inventory's available bags
+  // - Calendar date selected (multiple inventories on day) -> all available bags for that day
+  // - General view (default on open) -> all available stock bags for immediate yard lookup
   const activeInventoryBags = useMemo(() => {
-    if (isCreatingNewInventory) return draftBags;
-    const sourceBags = fetchedDayBags !== null ? fetchedDayBags : inventoryBags;
+    if (isCreatingNewInventory) return draftBags.filter((b) => !b.is_dispatched);
+    const sourceBags = (fetchedDayBags !== null ? fetchedDayBags : inventoryBags).filter(
+      (b) => !b.is_dispatched
+    );
     if (selectedInventoryId) {
       return sourceBags.filter(
         (b) => String(b.inventory_id) === String(selectedInventoryId)
@@ -627,7 +628,7 @@ export const InventoryModule: React.FC<InventoryModuleProps> = ({
         (b) => b.inventory_id !== undefined && dayIds.has(String(b.inventory_id))
       );
     }
-    return inventoryBags;
+    return sourceBags;
   }, [
     isCreatingNewInventory,
     draftBags,
@@ -638,10 +639,12 @@ export const InventoryModule: React.FC<InventoryModuleProps> = ({
     selectedDateInventories,
   ]);
 
-  // Filtered Lista de Bags (Product + Classification + Status Bloqueado/Expedido + Search by barcode/bag_code)
+  // Filtered Lista de Bags (Product + Classification + Status Ativo/Bloqueado + Search by barcode/bag_code)
   const filteredActiveBags = useMemo(() => {
     const query = bagSearch.trim().toLowerCase();
     return activeInventoryBags.filter((bag) => {
+      if (bag.is_dispatched) return false;
+
       if (bagProductFilter !== 'Todos') {
         const inferredProduct = bag.inventory_id
           ? inferBagFlourType(bag, inventoryMap)
@@ -671,9 +674,8 @@ export const InventoryModule: React.FC<InventoryModuleProps> = ({
         return false;
       }
 
-      if (bagBlockFilter === 'Ativos' && (bag.is_blocked || bag.is_dispatched)) return false;
+      if (bagBlockFilter === 'Ativos' && bag.is_blocked) return false;
       if (bagBlockFilter === 'Bloqueados' && !bag.is_blocked) return false;
-      if (bagBlockFilter === 'Expedidos' && !bag.is_dispatched) return false;
 
       return true;
     });
@@ -699,7 +701,10 @@ export const InventoryModule: React.FC<InventoryModuleProps> = ({
     );
 
     const savedDayBags = inventoryBags.filter(
-      (b) => b.inventory_id !== undefined && sameDayIds.has(String(b.inventory_id))
+      (b) =>
+        !b.is_dispatched &&
+        b.inventory_id !== undefined &&
+        sameDayIds.has(String(b.inventory_id))
     );
 
     // Quando estiver criando um novo rascunho naquela data, soma também os itens do rascunho
@@ -841,7 +846,10 @@ export const InventoryModule: React.FC<InventoryModuleProps> = ({
           .filter(Boolean)
       );
       sourceBags = inventoryBags.filter(
-        (b) => b.inventory_id !== undefined && sameDayInvIds.has(String(b.inventory_id))
+        (b) =>
+          !b.is_dispatched &&
+          b.inventory_id !== undefined &&
+          sameDayInvIds.has(String(b.inventory_id))
       );
     }
 
@@ -2414,9 +2422,7 @@ export const InventoryModule: React.FC<InventoryModuleProps> = ({
                 {globalStockKpis.totalBags}
               </div>
               <div className="mt-1 text-[10px] text-slate-500 font-mono">
-                {globalStockKpis.dispatchedBags > 0
-                  ? `${globalStockKpis.dispatchedBags} item(ns) já expedido(s)`
-                  : 'Soma do estoque ativo'}
+                Soma do estoque ativo disponível no pátio
               </div>
             </div>
 
@@ -2930,7 +2936,9 @@ export const InventoryModule: React.FC<InventoryModuleProps> = ({
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                   {selectedDateInventories.map((inv) => {
                     const isActive = selectedInventoryId === String(inv.id);
-                    const sourceBags = fetchedDayBags !== null ? fetchedDayBags : inventoryBags;
+                    const sourceBags = (fetchedDayBags !== null ? fetchedDayBags : inventoryBags).filter(
+                      (b) => !b.is_dispatched
+                    );
                     const invBagsList = sourceBags.filter(
                       (b) => String(b.inventory_id) === String(inv.id)
                     );
@@ -3823,7 +3831,7 @@ export const InventoryModule: React.FC<InventoryModuleProps> = ({
                     ? 'Itens no rascunho do novo inventário (clique em "Salvar Inventário no Supabase" para gravar)'
                     : selectedCalendarDate
                     ? `Exibindo itens do dia ${formatDateDDMMYYYY(selectedCalendarDate)} — clique em um card acima para filtrar por produto ou use os filtros abaixo`
-                    : 'Visualizando todos os itens registrados em estoque — use os filtros rápidos abaixo ou selecione uma data no calendário'}
+                    : 'Visualizando apenas os itens disponíveis em estoque no pátio (itens expedidos ficam no histórico de Carregamentos)'}
                 </p>
               </div>
               <div className="flex flex-wrap items-center gap-2 print:hidden">
@@ -3914,7 +3922,7 @@ export const InventoryModule: React.FC<InventoryModuleProps> = ({
                   value={bagBlockFilter}
                   onChange={(e) =>
                     setBagBlockFilter(
-                      e.target.value as 'Todos' | 'Ativos' | 'Bloqueados' | 'Expedidos'
+                      e.target.value as 'Todos' | 'Ativos' | 'Bloqueados'
                     )
                   }
                   className="w-full px-3 py-2 bg-white border border-slate-300 rounded-lg text-xs text-slate-900 font-semibold focus:border-emerald-500 focus:outline-none cursor-pointer"
@@ -3922,7 +3930,6 @@ export const InventoryModule: React.FC<InventoryModuleProps> = ({
                   <option value="Todos">Todos</option>
                   <option value="Ativos">Ativos</option>
                   <option value="Bloqueados">Bloqueados</option>
-                  <option value="Expedidos">Expedidos</option>
                 </select>
               </div>
 
@@ -3974,14 +3981,13 @@ export const InventoryModule: React.FC<InventoryModuleProps> = ({
                     <tr>
                       <td colSpan={10} className="px-4 py-10 text-center text-slate-500 font-sans">
                         {activeInventoryBags.length === 0
-                          ? 'Nenhum bag cadastrado neste inventário. Importe uma planilha Excel/CSV ou adicione manualmente acima.'
-                          : 'Nenhum bag encontrado com os filtros aplicados.'}
+                          ? 'Nenhum bag ou tanque disponível em estoque no momento.'
+                          : 'Nenhum bag disponível encontrado com os filtros aplicados.'}
                       </td>
                     </tr>
                   ) : (
                     filteredActiveBags.map((bag, idx) => {
                       const isBlocked = Boolean(bag.is_blocked);
-                      const isDispatched = Boolean(bag.is_dispatched);
                       const originalIndex = activeInventoryBags.indexOf(bag);
                       const draftIdx = originalIndex >= 0 ? originalIndex : idx;
                       const rowKey = bag.id !== undefined ? String(bag.id) : `draft-${draftIdx}`;
@@ -3991,56 +3997,54 @@ export const InventoryModule: React.FC<InventoryModuleProps> = ({
                           className={`transition-colors ${
                             isBlocked
                               ? 'bg-red-50 hover:bg-red-100/70'
-                              : isDispatched
-                              ? 'bg-slate-100/70 hover:bg-slate-100'
                               : 'hover:bg-slate-50'
                           }`}
                         >
                           <td
                             className={`px-3 py-2.5 text-center font-semibold text-slate-900 ${
-                              isBlocked || isDispatched ? 'opacity-70' : ''
+                              isBlocked ? 'opacity-70' : ''
                             }`}
                           >
                             {bag.product_code}
                           </td>
                           <td
                             className={`px-3 py-2.5 text-center font-sans text-slate-800 max-w-[220px] truncate ${
-                              isBlocked || isDispatched ? 'opacity-70' : ''
+                              isBlocked ? 'opacity-70' : ''
                             }`}
                           >
                             {bag.product_description}
                           </td>
                           <td
                             className={`px-3 py-2.5 text-center font-bold text-slate-900 ${
-                              isBlocked || isDispatched ? 'opacity-70' : ''
+                              isBlocked ? 'opacity-70' : ''
                             }`}
                           >
                             {bag.bag_code}
                           </td>
                           <td
                             className={`px-3 py-2.5 text-center whitespace-nowrap ${
-                              isBlocked || isDispatched ? 'opacity-70' : ''
+                              isBlocked ? 'opacity-70' : ''
                             }`}
                           >
                             {formatDateDDMMYYYY(bag.production_date)}
                           </td>
                           <td
                             className={`px-3 py-2.5 text-center whitespace-nowrap ${
-                              isBlocked || isDispatched ? 'opacity-70' : ''
+                              isBlocked ? 'opacity-70' : ''
                             }`}
                           >
                             {formatDateDDMMYYYY(bag.posting_date)}
                           </td>
                           <td
                             className={`px-3 py-2.5 text-center whitespace-nowrap ${
-                              isBlocked || isDispatched ? 'opacity-70' : ''
+                              isBlocked ? 'opacity-70' : ''
                             }`}
                           >
                             {(bag.posting_time || '').slice(0, 5)}
                           </td>
                           <td
                             className={`px-3 py-2.5 text-center font-bold ${
-                              isBlocked || isDispatched ? 'opacity-70' : ''
+                              isBlocked ? 'opacity-70' : ''
                             }`}
                           >
                             <span className="px-2 py-0.5 rounded bg-slate-100 border border-slate-200 text-slate-700 text-[10px]">
@@ -4049,7 +4053,7 @@ export const InventoryModule: React.FC<InventoryModuleProps> = ({
                           </td>
                           <td
                             className={`px-3 py-2.5 text-center font-bold text-emerald-700 whitespace-nowrap ${
-                              isBlocked || isDispatched ? 'opacity-70' : ''
+                              isBlocked ? 'opacity-70' : ''
                             }`}
                           >
                             <div>{formatNumberBR(bag.weight_kg)} kg</div>
@@ -4064,22 +4068,13 @@ export const InventoryModule: React.FC<InventoryModuleProps> = ({
                           </td>
                           <td
                             className={`px-3 py-2.5 text-center font-semibold text-slate-900 whitespace-nowrap ${
-                              isBlocked || isDispatched ? 'opacity-70' : ''
+                              isBlocked ? 'opacity-70' : ''
                             }`}
                           >
                             {bag.barcode}
                           </td>
                           <td className="px-3 py-2.5 text-center whitespace-nowrap print:hidden">
                             <div className="flex items-center justify-center gap-1.5">
-                              {isDispatched && (
-                                <span
-                                  className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold font-mono bg-indigo-100 text-indigo-800 border border-indigo-200"
-                                  title="Bag já expedido/baixado do estoque ativo"
-                                >
-                                  <Truck className="w-2.5 h-2.5" />
-                                  Expedido
-                                </span>
-                              )}
                               {renderClassificationBadge(bag.quality_classification, bag)}
                               <button
                                 type="button"
@@ -4791,7 +4786,7 @@ export const InventoryModule: React.FC<InventoryModuleProps> = ({
                       Estoque Geral
                     </div>
                     <div className="text-[11px] text-slate-500 mt-0.5">
-                      Exporta o consolidado de todos os {inventoryBags.length} bag(s) cadastrados no Supabase.
+                      Exporta o consolidado de todos os {activeStockBags.length} item(ns) disponíveis em estoque ativo no Supabase.
                     </div>
                   </div>
                 </button>

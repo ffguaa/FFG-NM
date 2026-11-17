@@ -109,27 +109,43 @@ function AppContent() {
     }
   }, [showSupabaseError]);
 
-  // Load Inventory & Bags
+  // Load Inventory & Bags (paginated so active + historical bags never truncate at 1000 rows)
   const fetchInventoryData = useCallback(async () => {
     try {
-      const [invRes, bagsRes] = await Promise.all([
-        supabase
-          .from('ffg_inventories')
-          .select('*')
-          .order('inventory_date', { ascending: false })
-          .order('inventory_time', { ascending: false }),
-        supabase
+      const invPromise = supabase
+        .from('ffg_inventories')
+        .select('*')
+        .order('inventory_date', { ascending: false })
+        .order('inventory_time', { ascending: false });
+
+      const allBags: FfgInventoryBag[] = [];
+      const pageSize = 1000;
+      let from = 0;
+      let keepFetching = true;
+
+      while (keepFetching) {
+        const { data: bagsPage, error: bagsErr } = await supabase
           .from('ffg_inventory_bags')
           .select('*')
           .order('production_date', { ascending: false })
-          .order('created_at', { ascending: false }),
-      ]);
+          .order('created_at', { ascending: false })
+          .range(from, from + pageSize - 1);
 
+        if (bagsErr) throw bagsErr;
+        const rows = (bagsPage || []) as FfgInventoryBag[];
+        allBags.push(...rows);
+        if (rows.length < pageSize) {
+          keepFetching = false;
+        } else {
+          from += pageSize;
+        }
+      }
+
+      const invRes = await invPromise;
       if (invRes.error) throw invRes.error;
-      if (bagsRes.error) throw bagsRes.error;
 
       setInventories(invRes.data || []);
-      setInventoryBags(bagsRes.data || []);
+      setInventoryBags(allBags);
     } catch (err: any) {
       showSupabaseError('Erro ao Carregar Inventário (ffg_inventories / ffg_inventory_bags)', err);
     }
@@ -181,6 +197,37 @@ function AppContent() {
     };
     init();
   }, []);
+
+  // Automatic real-time synchronization for inventory & shipment changes
+  useEffect(() => {
+    let timer: ReturnType<typeof setTimeout> | null = null;
+    const scheduleSync = () => {
+      if (timer) clearTimeout(timer);
+      timer = setTimeout(() => {
+        fetchInventoryData();
+        fetchShipments();
+      }, 400);
+    };
+
+    const channel = supabase
+      .channel('ffg-stock-dispatch-sync')
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'ffg_inventory_bags' },
+        scheduleSync
+      )
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'ffg_shipments' },
+        scheduleSync
+      )
+      .subscribe();
+
+    return () => {
+      if (timer) clearTimeout(timer);
+      supabase.removeChannel(channel);
+    };
+  }, [fetchInventoryData, fetchShipments]);
 
   const handleStartEditYieldRecord = (record: FfgYieldRecord) => {
     setEditingYieldRecord(record);
