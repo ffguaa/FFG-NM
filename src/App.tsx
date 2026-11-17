@@ -7,6 +7,7 @@ import { ExecutiveDashboard } from './components/ExecutiveDashboard';
 import { YieldForm } from './components/YieldForm';
 import { MaintenanceForm } from './components/MaintenanceForm';
 import { InventoryModule } from './components/InventoryModule';
+import { ShippingModule } from './components/ShippingModule';
 import { SkuManagementModal } from './components/SkuManagementModal';
 import { SpreadsheetHelpModal } from './components/SpreadsheetHelpModal';
 import {
@@ -15,13 +16,14 @@ import {
   FfgDowntime,
   FfgInventory,
   FfgInventoryBag,
+  FfgShipment,
 } from './types';
 import { RefreshCw } from 'lucide-react';
 
 function AppContent() {
   const { showSupabaseError } = useToast();
 
-  const [activeTab, setActiveTab] = useState<'dashboard' | 'yield' | 'maintenance' | 'inventory'>('dashboard');
+  const [activeTab, setActiveTab] = useState<'dashboard' | 'yield' | 'maintenance' | 'inventory' | 'shipping'>('dashboard');
   const mainContainerRef = React.useRef<HTMLElement>(null);
 
   // Supabase Data States
@@ -30,6 +32,8 @@ function AppContent() {
   const [downtimes, setDowntimes] = useState<FfgDowntime[]>([]);
   const [inventories, setInventories] = useState<FfgInventory[]>([]);
   const [inventoryBags, setInventoryBags] = useState<FfgInventoryBag[]>([]);
+  const [shipments, setShipments] = useState<FfgShipment[]>([]);
+  const [shipmentsSchemaReady, setShipmentsSchemaReady] = useState<boolean>(true);
   const [editingYieldRecord, setEditingYieldRecord] = useState<FfgYieldRecord | null>(null);
 
   // Connectivity State
@@ -131,6 +135,32 @@ function AppContent() {
     }
   }, [showSupabaseError]);
 
+  // Load Shipments / Expeditions
+  const fetchShipments = useCallback(async () => {
+    try {
+      const { data, error } = await supabase
+        .from('ffg_shipments')
+        .select('*')
+        .order('shipment_date', { ascending: false })
+        .order('created_at', { ascending: false });
+
+      if (error) {
+        const msg = String(error.message || '');
+        if (error.code === 'PGRST205' || error.code === '42P01' || msg.includes('ffg_shipments')) {
+          setShipmentsSchemaReady(false);
+          setShipments([]);
+          return;
+        }
+        throw error;
+      }
+
+      setShipmentsSchemaReady(true);
+      setShipments(data || []);
+    } catch (err: any) {
+      showSupabaseError('Erro ao Carregar Expedições (ffg_shipments)', err);
+    }
+  }, [showSupabaseError]);
+
   // Reload all data
   const reloadAll = useCallback(async () => {
     await Promise.all([
@@ -139,8 +169,9 @@ function AppContent() {
       fetchYieldRecords(),
       fetchDowntimes(),
       fetchInventoryData(),
+      fetchShipments(),
     ]);
-  }, [verifyConnection, fetchSkus, fetchYieldRecords, fetchDowntimes, fetchInventoryData]);
+  }, [verifyConnection, fetchSkus, fetchYieldRecords, fetchDowntimes, fetchInventoryData, fetchShipments]);
 
   useEffect(() => {
     const init = async () => {
@@ -257,6 +288,18 @@ function AppContent() {
                     inventories={inventories}
                     inventoryBags={inventoryBags}
                     onReload={fetchInventoryData}
+                  />
+                )}
+
+                {/* Tab 5: Shipping & Dispatch */}
+                {activeTab === 'shipping' && (
+                  <ShippingModule
+                    shipments={shipments}
+                    inventoryBags={inventoryBags}
+                    shipmentsSchemaReady={shipmentsSchemaReady}
+                    onReload={async () => {
+                      await Promise.all([fetchInventoryData(), fetchShipments()]);
+                    }}
                   />
                 )}
               </>

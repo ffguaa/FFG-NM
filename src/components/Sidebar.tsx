@@ -1,12 +1,12 @@
 import React from 'react';
 import { 
-  BarChart3, Scale, Wrench, Database, RefreshCw, Layers, PackageCheck
+  BarChart3, Scale, Wrench, Database, RefreshCw, Layers, PackageCheck, Truck
 } from 'lucide-react';
 import { ConnectionStatus } from '../lib/supabase';
 
 interface SidebarProps {
-  activeTab: 'dashboard' | 'yield' | 'maintenance' | 'inventory';
-  setActiveTab: (tab: 'dashboard' | 'yield' | 'maintenance' | 'inventory') => void;
+  activeTab: 'dashboard' | 'yield' | 'maintenance' | 'inventory' | 'shipping';
+  setActiveTab: (tab: 'dashboard' | 'yield' | 'maintenance' | 'inventory' | 'shipping') => void;
   connectionStatus: ConnectionStatus;
   onRetryConnection: () => void;
   onOpenSkus: () => void;
@@ -99,6 +99,24 @@ export const Sidebar: React.FC<SidebarProps> = ({
               <div>Inventário</div>
               <div className={`text-[10px] font-normal ${activeTab === 'inventory' ? 'text-emerald-600/80' : 'text-slate-400'}`}>
                 Estoque de Bags & Qualidade
+              </div>
+            </div>
+          </button>
+
+          {/* Tab 5: Carregamentos / Expedição */}
+          <button
+            onClick={() => setActiveTab('shipping')}
+            className={`w-full flex items-center gap-3 px-3.5 py-3 rounded-xl text-xs font-semibold transition-all border ${
+              activeTab === 'shipping'
+                ? 'bg-emerald-50 text-emerald-700 border-emerald-200 shadow-xs'
+                : 'text-slate-600 hover:text-slate-900 hover:bg-slate-50 border-transparent'
+            }`}
+          >
+            <Truck className={`w-4 h-4 shrink-0 ${activeTab === 'shipping' ? 'text-emerald-600' : 'text-slate-500'}`} />
+            <div className="text-left">
+              <div>Carregamentos / Expedição</div>
+              <div className={`text-[10px] font-normal ${activeTab === 'shipping' ? 'text-emerald-600/80' : 'text-slate-400'}`}>
+                Baixa de Estoque & Cargas
               </div>
             </div>
           </button>

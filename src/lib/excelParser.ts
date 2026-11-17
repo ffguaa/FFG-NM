@@ -332,12 +332,32 @@ function normalizeExcelTime(val: any): string {
   return '00:00';
 }
 
+export function normalizeBarcodeKey(val: unknown): string {
+  if (val === undefined || val === null) return '';
+  const str =
+    typeof val === 'number'
+      ? Number.isFinite(val)
+        ? Math.round(val).toString()
+        : ''
+      : String(val);
+  return str
+    .trim()
+    .replace(/\s+/g, '')
+    .replace(/\.0+$/, '')
+    .replace(/\./g, '')
+    .replace(/^0+(?=\d)/, '');
+}
+
 function normalizeBarcodeString(val: any): string {
   if (val === undefined || val === null) return '';
   if (typeof val === 'number') {
-    return Math.round(val).toString();
+    return Number.isFinite(val) ? Math.round(val).toString() : '';
   }
-  return String(val).trim().replace(/\s+/g, '');
+  return String(val)
+    .trim()
+    .replace(/\s+/g, '')
+    .replace(/\.0+$/, '')
+    .replace(/\./g, '');
 }
 
 /**
@@ -665,3 +685,137 @@ export async function parseQualityReportExcel(file: File): Promise<ParsedQuality
 
   return parsedRows;
 }
+
+export interface ParsedShippingExcelResult {
+  barcodes: string[];
+  duplicateCount: number;
+  totalRead: number;
+}
+
+/**
+ * Parses an Expedition/Shipping Excel or CSV spreadsheet containing bag barcodes.
+ * Supports multi-column reports (matching header "Código de Barra", "N° Codigo de Barras", "Barcode", "EAN")
+ * as well as single-column barcode lists (with or without headers).
+ */
+export async function parseShippingBagsExcel(file: File): Promise<ParsedShippingExcelResult> {
+  const buffer = await file.arrayBuffer();
+  const isCsv = file.name.toLowerCase().endsWith('.csv');
+
+  let workbook: XLSX.WorkBook;
+  if (isCsv) {
+    const text = new TextDecoder('utf-8').decode(buffer);
+    workbook = XLSX.read(text, { type: 'string', FS: text.includes(';') ? ';' : ',' });
+  } else {
+    workbook = XLSX.read(buffer, { type: 'array' });
+  }
+
+  if (!workbook.SheetNames.length) {
+    throw new Error('A planilha de Expedição selecionada está vazia.');
+  }
+
+  const sheet = workbook.Sheets[workbook.SheetNames[0]];
+  const rows: any[][] = XLSX.utils.sheet_to_json(sheet, { header: 1, defval: null, raw: true });
+
+  if (!rows.length) {
+    throw new Error('Nenhum dado encontrado na planilha de Expedição.');
+  }
+
+  const normalizeHeader = (cell: any): string =>
+    String(cell ?? '')
+      .trim()
+      .toUpperCase()
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '')
+      .replace(/[°º]/g, '')
+      .replace(/\s+/g, ' ');
+
+  let headerRowIdx = -1;
+  let colBarcode = -1;
+
+  for (let r = 0; r < Math.min(20, rows.length); r++) {
+    const row = rows[r] || [];
+    const normalizedCells = row.map(normalizeHeader);
+    const idx = normalizedCells.findIndex(
+      (h) =>
+        h.includes('BARRA') ||
+        h.includes('BARCODE') ||
+        h === 'EAN' ||
+        h.includes('COD BAR') ||
+        h.includes('COD. BAR')
+    );
+    if (idx >= 0) {
+      headerRowIdx = r;
+      colBarcode = idx;
+      break;
+    }
+  }
+
+  // Fallback for headerless or single-column barcode sheets: detect column with >=6-digit numeric strings
+  if (colBarcode === -1) {
+    const colScores = new Map<number, number>();
+    for (let r = 0; r < Math.min(30, rows.length); r++) {
+      const row = rows[r] || [];
+      row.forEach((cell, cIdx) => {
+        const str = normalizeBarcodeString(cell);
+        if (/^\d{6,20}$/.test(str)) {
+          colScores.set(cIdx, (colScores.get(cIdx) || 0) + 1);
+        }
+      });
+    }
+    let bestCol = 0;
+    let bestScore = 0;
+    colScores.forEach((score, cIdx) => {
+      if (score > bestScore) {
+        bestScore = score;
+        bestCol = cIdx;
+      }
+    });
+    if (bestScore > 0) {
+      colBarcode = bestCol;
+    } else {
+      colBarcode = 0;
+    }
+  }
+
+  const startRow = headerRowIdx >= 0 ? headerRowIdx + 1 : 0;
+  const seen = new Set<string>();
+  const barcodes: string[] = [];
+  let duplicateCount = 0;
+  let totalRead = 0;
+
+  for (let i = startRow; i < rows.length; i++) {
+    const row = rows[i];
+    if (!row || row.every((c) => c === null || String(c).trim() === '')) continue;
+
+    const code = normalizeBarcodeString(row[colBarcode]);
+    if (!code) continue;
+
+    const upper = code.toUpperCase();
+    if (
+      upper === 'TOTAL' ||
+      upper.includes('CODIGO') ||
+      upper.includes('BARRA') ||
+      upper === 'BARCODE' ||
+      upper === 'EAN'
+    ) {
+      continue;
+    }
+
+    totalRead += 1;
+    if (seen.has(code)) {
+      duplicateCount += 1;
+      continue;
+    }
+    seen.add(code);
+    barcodes.push(code);
+  }
+
+  if (barcodes.length === 0) {
+    throw new Error(
+      'Nenhum código de barras válido encontrado na planilha. Certifique-se de incluir a coluna "Código de Barra" ou uma lista de códigos de barras.'
+    );
+  }
+
+  return { barcodes, duplicateCount, totalRead };
+}
+

@@ -64,7 +64,13 @@ export interface ToastMessage {
   timestamp: number;
 }
 
-export type FlourType = 'Vísceras' | 'Penas';
+export type FlourType =
+  | 'Farinha de Penas'
+  | 'Farinha de Vísceras'
+  | 'Óleo de Aves'
+  | 'Óleo Graxo'
+  | 'Vísceras'
+  | 'Penas';
 
 export interface FfgInventory {
   id?: string | number;
@@ -87,6 +93,7 @@ export interface FfgInventoryBag {
   posting_time: string; // HH:MM
   period: string;
   weight_kg: number;
+  volume_liters?: number | null;
   barcode: string;
   quality_acidity?: number | null;
   quality_peroxide?: number | null;
@@ -97,6 +104,31 @@ export interface FfgInventoryBag {
   quality_digestibility?: number | null;
   quality_classification?: string | null;
   is_blocked?: boolean;
+  is_dispatched?: boolean;
+  shipment_id?: string | number | null;
+  dispatched_at?: string | null;
+  created_at?: string;
+  updated_at?: string;
+}
+
+export type ShipmentStatus = 'Programada' | 'Realizada';
+export type FreightType = 'FOB' | 'CIF';
+
+export interface FfgShipment {
+  id?: string | number;
+  shipment_date: string; // YYYY-MM-DD
+  product: string;
+  client: string;
+  programmed_volume_kg: number;
+  actual_weight_kg: number;
+  bag_count: number;
+  price_per_kg: number;
+  payment_condition: string;
+  freight_type: FreightType;
+  documentation: string;
+  carrier: string;
+  status: ShipmentStatus;
+  notes?: string | null;
   created_at?: string;
   updated_at?: string;
 }
