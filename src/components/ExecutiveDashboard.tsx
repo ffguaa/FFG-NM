@@ -5,7 +5,7 @@ import {
 import {
   Wrench, Calendar, Scale, Clock,
   AlertTriangle, BarChart3,
-  Activity, Eye, Trash2, Droplets, Pencil
+  Activity, Eye, Trash2, Pencil
 } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 import { useToast } from '../context/ToastContext';
@@ -41,6 +41,27 @@ const getRecordOilYieldPct = (rec: FfgYieldRecord): number => {
   }
   if (rec.oil_yield_percent !== undefined && rec.oil_yield_percent !== null) {
     return Math.round(Number(rec.oil_yield_percent) * 100) / 100;
+  }
+  return 0;
+};
+
+const getRecordOleoAvesYieldPct = (rec: FfgYieldRecord): number => {
+  const mp = Number(rec.mp_destinada_ffg_kg || 0);
+  const avesKg = getRecordOleoAvesKg(rec);
+  if (mp > 0) {
+    return Math.round(((avesKg / mp) * 100) * 100) / 100;
+  }
+  if (getRecordOleoGraxoKg(rec) === 0 && rec.oil_yield_percent !== undefined && rec.oil_yield_percent !== null) {
+    return Math.round(Number(rec.oil_yield_percent) * 100) / 100;
+  }
+  return 0;
+};
+
+const getRecordOleoGraxoYieldPct = (rec: FfgYieldRecord): number => {
+  const mp = Number(rec.mp_destinada_ffg_kg || 0);
+  const graxoKg = getRecordOleoGraxoKg(rec);
+  if (mp > 0) {
+    return Math.round(((graxoKg / mp) * 100) * 100) / 100;
   }
   return 0;
 };
@@ -128,13 +149,13 @@ export const ExecutiveDashboard: React.FC<ExecutiveDashboardProps> = ({
       return {
         avgRendimentoFarinha: 0,
         avgRendimentoOleo: 0,
+        avgRendimentoOleoAves: 0,
+        avgRendimentoOleoGraxo: 0,
         avgRendimentoTotal: 0,
         avgRendimentoVisceras: 0,
         avgRendimentoPenas: 0,
         totalMpDestinada: 0,
-        totalSobrepeso: 0,
         totalMassaViva: 0,
-        totalTpa: 0,
         totalFarinhaVisceras: 0,
         totalFarinhaPenas: 0,
         totalOilProducedKg: 0,
@@ -144,13 +165,13 @@ export const ExecutiveDashboard: React.FC<ExecutiveDashboardProps> = ({
 
     const sumFarinhaPct = filteredYieldRecords.reduce((a, b) => a + getRecordFarinhaYieldPct(b), 0);
     const sumOilPct = filteredYieldRecords.reduce((a, b) => a + getRecordOilYieldPct(b), 0);
+    const sumOilAvesPct = filteredYieldRecords.reduce((a, b) => a + getRecordOleoAvesYieldPct(b), 0);
+    const sumOilGraxoPct = filteredYieldRecords.reduce((a, b) => a + getRecordOleoGraxoYieldPct(b), 0);
     const sumTotalPct = filteredYieldRecords.reduce((a, b) => a + getRecordTotalYieldPct(b), 0);
     const sumVisc = filteredYieldRecords.reduce((a, b) => a + Number(b.rendimento_visceras_pct || 0), 0);
     const sumPenas = filteredYieldRecords.reduce((a, b) => a + Number(b.rendimento_penas_pct || 0), 0);
     const sumMp = filteredYieldRecords.reduce((a, b) => a + Number(b.mp_destinada_ffg_kg || 0), 0);
-    const sumSobrepeso = filteredYieldRecords.reduce((a, b) => a + Number(b.sobrepeso_total_kg || 0), 0);
     const sumMassaViva = filteredYieldRecords.reduce((a, b) => a + Number(b.massa_viva_kg || 0), 0);
-    const sumTpa = filteredYieldRecords.reduce((a, b) => a + Number(b.tpa_total_kg || 0), 0);
     const sumFarVisc = filteredYieldRecords.reduce((a, b) => a + Number(b.farinha_visceras_kg || 0), 0);
     const sumFarPen = filteredYieldRecords.reduce((a, b) => a + Number(b.farinha_penas_kg || 0), 0);
     const sumOilKg = filteredYieldRecords.reduce((a, b) => a + getRecordOilKg(b), 0);
@@ -159,13 +180,13 @@ export const ExecutiveDashboard: React.FC<ExecutiveDashboardProps> = ({
     return {
       avgRendimentoFarinha: sumFarinhaPct / totalRecords,
       avgRendimentoOleo: sumOilPct / totalRecords,
+      avgRendimentoOleoAves: sumOilAvesPct / totalRecords,
+      avgRendimentoOleoGraxo: sumOilGraxoPct / totalRecords,
       avgRendimentoTotal: sumTotalPct / totalRecords,
       avgRendimentoVisceras: sumVisc / totalRecords,
       avgRendimentoPenas: sumPenas / totalRecords,
       totalMpDestinada: sumMp,
-      totalSobrepeso: sumSobrepeso,
       totalMassaViva: sumMassaViva,
-      totalTpa: sumTpa,
       totalFarinhaVisceras: sumFarVisc,
       totalFarinhaPenas: sumFarPen,
       totalOilProducedKg: sumOilKg,
@@ -284,46 +305,46 @@ export const ExecutiveDashboard: React.FC<ExecutiveDashboardProps> = ({
     <div className="space-y-6">
 
       {/* Top Banner with Vision Selector & Filters */}
-      <div className="bg-white border border-slate-200 rounded-2xl p-5 shadow-sm">
-        <div className="flex flex-col xl:flex-row items-start xl:items-center justify-between gap-5">
+      <div className="bg-white border border-slate-200 rounded-2xl p-4 sm:p-5 shadow-sm">
+        <div className="flex flex-col xl:flex-row items-start xl:items-center justify-between gap-4 xl:gap-5">
 
           {/* Vision Selector (Plano Rendimento vs Plano Manutenção) */}
-          <div className="flex items-center gap-3">
-            <div className="bg-slate-100 p-1 rounded-xl border border-slate-200 flex items-center gap-1.5">
+          <div className="flex items-center gap-3 w-full sm:w-auto overflow-x-auto">
+            <div className="bg-slate-100 p-1 rounded-xl border border-slate-200 flex items-center gap-1.5 shrink-0">
               <button
                 type="button"
                 onClick={() => setActivePlan('rendimento')}
-                className={`flex items-center gap-2.5 px-5 py-2.5 rounded-lg text-xs font-bold transition-all ${
+                className={`flex items-center gap-2 px-4 sm:px-5 py-2 sm:py-2.5 rounded-lg text-xs font-bold whitespace-nowrap transition-all ${
                   activePlan === 'rendimento'
                     ? 'bg-emerald-600 text-white shadow-sm'
                     : 'text-slate-600 hover:text-slate-900 hover:bg-white'
                 }`}
               >
-                <Scale className="w-4 h-4" />
+                <Scale className="w-4 h-4 shrink-0" />
                 <span>Plano Rendimento</span>
               </button>
 
               <button
                 type="button"
                 onClick={() => setActivePlan('manutencao')}
-                className={`flex items-center gap-2.5 px-5 py-2.5 rounded-lg text-xs font-bold transition-all ${
+                className={`flex items-center gap-2 px-4 sm:px-5 py-2 sm:py-2.5 rounded-lg text-xs font-bold whitespace-nowrap transition-all ${
                   activePlan === 'manutencao'
                     ? 'bg-amber-500 text-white shadow-sm'
                     : 'text-slate-600 hover:text-slate-900 hover:bg-white'
                 }`}
               >
-                <Wrench className="w-4 h-4" />
+                <Wrench className="w-4 h-4 shrink-0" />
                 <span>Plano Manutenção</span>
               </button>
             </div>
           </div>
 
           {/* Filters Bar: Period & Shift */}
-          <div className="flex flex-wrap items-center gap-3 w-full xl:w-auto">
+          <div className="flex flex-wrap items-center gap-2.5 sm:gap-3 w-full xl:w-auto">
 
             {/* Shift Filter (Applicable to Rendimento) */}
             {activePlan === 'rendimento' && (
-              <div className="flex items-center gap-2 bg-white px-3 py-1.5 rounded-xl border border-slate-300 text-xs">
+              <div className="flex items-center gap-2 bg-white px-3 py-1.5 rounded-xl border border-slate-300 text-xs shrink-0">
                 <span className="text-slate-500 font-mono">Turno:</span>
                 <select
                   value={shiftFilter}
@@ -339,8 +360,8 @@ export const ExecutiveDashboard: React.FC<ExecutiveDashboardProps> = ({
             )}
 
             {/* Date Filters */}
-            <div className="flex items-center gap-2 bg-white px-3 py-1.5 rounded-xl border border-slate-300 text-xs">
-              <Calendar className="w-3.5 h-3.5 text-slate-500" />
+            <div className="flex flex-wrap items-center gap-2 bg-white px-3 py-1.5 rounded-xl border border-slate-300 text-xs">
+              <Calendar className="w-3.5 h-3.5 text-slate-500 shrink-0" />
               <span className="text-slate-500 font-mono">De:</span>
               <input
                 type="date"
@@ -369,14 +390,14 @@ export const ExecutiveDashboard: React.FC<ExecutiveDashboardProps> = ({
             {activePlan === 'rendimento' ? (
               <button
                 onClick={onNavigateToYield}
-                className="px-3.5 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 shadow-sm"
+                className="px-3.5 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold whitespace-nowrap transition-all flex items-center gap-1.5 shadow-sm shrink-0"
               >
                 <span>+ Novo Rendimento</span>
               </button>
             ) : (
               <button
                 onClick={onNavigateToMaintenance}
-                className="px-3.5 py-2 bg-amber-500 hover:bg-amber-600 text-white rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 shadow-sm"
+                className="px-3.5 py-2 bg-amber-500 hover:bg-amber-600 text-white rounded-xl text-xs font-bold whitespace-nowrap transition-all flex items-center gap-1.5 shadow-sm shrink-0"
               >
                 <span>+ Nova Parada</span>
               </button>
@@ -393,109 +414,95 @@ export const ExecutiveDashboard: React.FC<ExecutiveDashboardProps> = ({
       {activePlan === 'rendimento' && (
         <div className="space-y-6">
 
-          {/* KPI Cards Grid (6 cards including dedicated Oil KPI & clear Farinha / Óleo / Total separation) */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-4">
+          {/* KPI Cards Grid (5 cards responsivos sem sobreposição em tablet landscape) */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-3 sm:gap-4">
 
             {/* Card 1: Rendimento Geral Total (Farinha + Óleo) */}
-            <div className="bg-white border border-emerald-200 rounded-2xl p-4 shadow-sm">
-              <div className="text-[10px] font-bold uppercase tracking-wider text-emerald-700 font-mono">
+            <div className="bg-white border border-emerald-200 rounded-2xl p-4 xl:p-3.5 2xl:p-4 shadow-sm min-w-0 flex flex-col justify-between">
+              <div className="text-[10px] leading-tight font-bold uppercase tracking-wider text-emerald-700 font-mono">
                 Rendimento Geral Total
               </div>
-              <div className="mt-2 flex items-baseline gap-2">
-                <span className="text-3xl font-black font-mono text-emerald-700">
+              <div className="mt-2.5 flex flex-wrap items-baseline gap-x-1.5 gap-y-0.5">
+                <span className="text-2xl xl:text-[20px] 2xl:text-[26px] font-black font-mono tabular-nums tracking-tight leading-none text-emerald-700">
                   {yieldKpis.avgRendimentoTotal.toFixed(2)}%
                 </span>
-                <span className="text-xs text-slate-500 font-mono">média</span>
+                <span className="text-[11px] text-slate-500 font-mono">média</span>
               </div>
-              <div className="mt-2 text-[10px] text-slate-600 font-mono flex items-center gap-1">
+              <div className="mt-2.5 text-[10px] leading-snug text-slate-600 font-mono flex flex-wrap items-center gap-x-1.5 gap-y-0.5">
                 <Activity className="w-3 h-3 text-emerald-600 shrink-0" />
-                <span>
-                  Far: {yieldKpis.avgRendimentoFarinha.toFixed(2)}% + Óleo: {yieldKpis.avgRendimentoOleo.toFixed(2)}%
-                </span>
+                <span className="whitespace-nowrap">Far: {yieldKpis.avgRendimentoFarinha.toFixed(2)}%</span>
+                <span className="text-slate-300">+</span>
+                <span className="whitespace-nowrap">Óleo: {yieldKpis.avgRendimentoOleo.toFixed(2)}%</span>
               </div>
             </div>
 
             {/* Card 2: Rendimento Farinha (%) */}
-            <div className="bg-white border border-slate-200 rounded-2xl p-4 shadow-sm">
-              <div className="text-[10px] font-bold uppercase tracking-wider text-slate-600 font-mono">
-                Rendimento Farinha
+            <div className="bg-white border border-slate-200 rounded-2xl p-4 xl:p-3.5 2xl:p-4 shadow-sm min-w-0 flex flex-col justify-between">
+              <div className="text-[10px] leading-tight font-bold uppercase tracking-wider text-slate-600 font-mono">
+                Rendimento Farinhas
               </div>
-              <div className="mt-2 flex items-baseline gap-2">
-                <span className="text-3xl font-black font-mono text-slate-900">
+              <div className="mt-2.5 flex flex-wrap items-baseline gap-x-1.5 gap-y-0.5">
+                <span className="text-2xl xl:text-[20px] 2xl:text-[26px] font-black font-mono tabular-nums tracking-tight leading-none text-slate-900">
                   {yieldKpis.avgRendimentoFarinha.toFixed(2)}%
                 </span>
-                <span className="text-xs text-slate-500 font-mono">média</span>
+                <span className="text-[11px] text-slate-500 font-mono">média</span>
               </div>
-              <div className="mt-2 text-[10px] text-slate-600 font-mono">
-                Vísc: {yieldKpis.avgRendimentoVisceras.toFixed(2)}% | Penas: {yieldKpis.avgRendimentoPenas.toFixed(2)}%
+              <div className="mt-2.5 text-[10px] leading-snug text-slate-600 font-mono flex flex-wrap items-center gap-x-1.5 gap-y-0.5">
+                <span className="whitespace-nowrap">Vísc: {yieldKpis.avgRendimentoVisceras.toFixed(2)}%</span>
+                <span className="text-slate-300">|</span>
+                <span className="whitespace-nowrap">Penas: {yieldKpis.avgRendimentoPenas.toFixed(2)}%</span>
               </div>
             </div>
 
-            {/* Card 3: Óleo Produzido & Rendimento de Óleo (%) */}
-            <div className="bg-white border border-amber-300 rounded-2xl p-4 shadow-sm">
-              <div className="text-[10px] font-bold uppercase tracking-wider text-amber-700 font-mono flex items-center gap-1">
-                <Droplets className="w-3.5 h-3.5 text-amber-600" />
-                <span>Produção de Óleo</span>
+            {/* Card 3: Rendimento Óleo (%) */}
+            <div className="bg-white border border-amber-300 rounded-2xl p-4 xl:p-3.5 2xl:p-4 shadow-sm min-w-0 flex flex-col justify-between">
+              <div className="text-[10px] leading-tight font-bold uppercase tracking-wider text-amber-700 font-mono">
+                Rendimento Óleos
               </div>
-              <div className="mt-2 flex items-baseline gap-1.5">
-                <span className="text-2xl font-black font-mono text-amber-700">
-                  {yieldKpis.totalOilProducedKg.toLocaleString('pt-BR', { maximumFractionDigits: 0 })}
+              <div className="mt-2.5 flex flex-wrap items-baseline gap-x-1.5 gap-y-0.5">
+                <span className="text-2xl xl:text-[20px] 2xl:text-[26px] font-black font-mono tabular-nums tracking-tight leading-none text-amber-700">
+                  {yieldKpis.avgRendimentoOleo.toFixed(2)}%
                 </span>
-                <span className="text-xs text-slate-500 font-mono">kg</span>
-                <span className="text-[11px] font-mono font-semibold text-slate-500">
-                  ({(yieldKpis.totalOilProducedKg / 1000).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} t)
-                </span>
+                <span className="text-[11px] text-slate-500 font-mono">média</span>
               </div>
-              <div className="mt-2 text-[11px] text-amber-800 font-mono font-bold">
-                Rend. Óleo Médio: {yieldKpis.avgRendimentoOleo.toFixed(2)}%
+              <div className="mt-2.5 text-[10px] leading-snug text-amber-800/90 font-mono flex flex-wrap items-center gap-x-1.5 gap-y-0.5">
+                <span className="whitespace-nowrap">Aves: {yieldKpis.avgRendimentoOleoAves.toFixed(2)}%</span>
+                <span className="text-amber-300">|</span>
+                <span className="whitespace-nowrap">Graxo: {yieldKpis.avgRendimentoOleoGraxo.toFixed(2)}%</span>
               </div>
             </div>
 
             {/* Card 4: Farinhas Produzidas (Vísceras + Penas) */}
-            <div className="bg-white border border-slate-200 rounded-2xl p-4 shadow-sm">
-              <div className="text-[10px] font-bold uppercase tracking-wider text-slate-600 font-mono">
+            <div className="bg-white border border-slate-200 rounded-2xl p-4 xl:p-3.5 2xl:p-4 shadow-sm min-w-0 flex flex-col justify-between">
+              <div className="text-[10px] leading-tight font-bold uppercase tracking-wider text-slate-600 font-mono">
                 Farinhas Produzidas
               </div>
-              <div className="mt-2 flex items-baseline gap-1">
-                <span className="text-2xl font-black font-mono text-slate-900">
+              <div className="mt-2.5 flex flex-wrap items-baseline gap-x-1 gap-y-0.5">
+                <span className="text-2xl xl:text-[20px] 2xl:text-[26px] font-black font-mono tabular-nums tracking-tight leading-none text-slate-900">
                   {(yieldKpis.totalFarinhaVisceras + yieldKpis.totalFarinhaPenas).toLocaleString('pt-BR', { maximumFractionDigits: 0 })}
                 </span>
-                <span className="text-xs text-slate-500 font-mono">kg</span>
+                <span className="text-[11px] text-slate-500 font-mono">kg</span>
               </div>
-              <div className="mt-2 text-[10px] text-slate-500 font-mono">
-                V: {yieldKpis.totalFarinhaVisceras.toLocaleString('pt-BR', { maximumFractionDigits: 0 })} | P: {yieldKpis.totalFarinhaPenas.toLocaleString('pt-BR', { maximumFractionDigits: 0 })}
+              <div className="mt-2.5 text-[10px] leading-snug text-slate-500 font-mono flex flex-wrap items-center gap-x-1.5 gap-y-0.5">
+                <span className="whitespace-nowrap">V: {yieldKpis.totalFarinhaVisceras.toLocaleString('pt-BR', { maximumFractionDigits: 0 })}</span>
+                <span className="text-slate-300">|</span>
+                <span className="whitespace-nowrap">P: {yieldKpis.totalFarinhaPenas.toLocaleString('pt-BR', { maximumFractionDigits: 0 })}</span>
               </div>
             </div>
 
             {/* Card 5: Total MP Destinada FFG */}
-            <div className="bg-white border border-slate-200 rounded-2xl p-4 shadow-sm">
-              <div className="text-[10px] font-bold uppercase tracking-wider text-slate-600 font-mono">
+            <div className="bg-white border border-slate-200 rounded-2xl p-4 xl:p-3.5 2xl:p-4 shadow-sm min-w-0 flex flex-col justify-between sm:col-span-2 lg:col-span-1">
+              <div className="text-[10px] leading-tight font-bold uppercase tracking-wider text-slate-600 font-mono">
                 MP Destinada FFG
               </div>
-              <div className="mt-2 flex items-baseline gap-1">
-                <span className="text-2xl font-black font-mono text-emerald-700">
+              <div className="mt-2.5 flex flex-wrap items-baseline gap-x-1 gap-y-0.5">
+                <span className="text-2xl xl:text-[20px] 2xl:text-[26px] font-black font-mono tabular-nums tracking-tight leading-none text-emerald-700">
                   {yieldKpis.totalMpDestinada.toLocaleString('pt-BR', { maximumFractionDigits: 0 })}
                 </span>
-                <span className="text-xs text-slate-500 font-mono">kg</span>
+                <span className="text-[11px] text-slate-500 font-mono">kg</span>
               </div>
-              <div className="mt-2 text-[10px] text-slate-500 font-mono">
+              <div className="mt-2.5 text-[10px] leading-snug text-slate-500 font-mono break-words">
                 Massa Viva: {yieldKpis.totalMassaViva.toLocaleString('pt-BR', { maximumFractionDigits: 0 })} kg
-              </div>
-            </div>
-
-            {/* Card 6: Total Sobrepeso Descontado */}
-            <div className="bg-white border border-slate-200 rounded-2xl p-4 shadow-sm">
-              <div className="text-[10px] font-bold uppercase tracking-wider text-slate-600 font-mono">
-                Sobrepeso Descontado
-              </div>
-              <div className="mt-2 flex items-baseline gap-1">
-                <span className="text-2xl font-black font-mono text-amber-700">
-                  {yieldKpis.totalSobrepeso.toLocaleString('pt-BR', { maximumFractionDigits: 0 })}
-                </span>
-                <span className="text-xs text-slate-500 font-mono">kg</span>
-              </div>
-              <div className="mt-2 text-[10px] text-slate-500 font-mono">
-                TPA: {yieldKpis.totalTpa.toLocaleString('pt-BR', { maximumFractionDigits: 0 })} kg
               </div>
             </div>
 
@@ -711,7 +718,7 @@ export const ExecutiveDashboard: React.FC<ExecutiveDashboardProps> = ({
                     <th className="px-3 py-2.5 text-center">TPA Total (kg)</th>
                     <th className="px-3 py-2.5 text-center">MP Destinada FFG</th>
                     <th className="px-3 py-2.5 text-center">Farinhas (V+P)</th>
-                    <th className="px-3 py-2.5 text-center">Óleo (kg)</th>
+                    <th className="px-3 py-2.5 text-center">Óleos (A+G)</th>
                     <th className="px-3 py-2.5 text-center">Rend. Farinha (%)</th>
                     <th className="px-3 py-2.5 text-center">Rend. Óleo (%)</th>
                     <th className="px-3 py-2.5 text-center">Rend. Total (%)</th>
@@ -727,8 +734,6 @@ export const ExecutiveDashboard: React.FC<ExecutiveDashboardProps> = ({
                     </tr>
                   ) : (
                     filteredYieldRecords.map((item) => {
-                      const oleoAvesKg = getRecordOleoAvesKg(item);
-                      const oleoGraxoKg = getRecordOleoGraxoKg(item);
                       const oilKg = getRecordOilKg(item);
                       const oilYield = getRecordOilYieldPct(item);
                       const farinhaYield = getRecordFarinhaYieldPct(item);
@@ -757,12 +762,7 @@ export const ExecutiveDashboard: React.FC<ExecutiveDashboardProps> = ({
                             {(Number(item.farinha_visceras_kg) + Number(item.farinha_penas_kg)).toLocaleString('pt-BR')}
                           </td>
                           <td className="px-3 py-2.5 text-center font-semibold text-amber-700">
-                            <div>{oilKg.toLocaleString('pt-BR')}</div>
-                            {oleoGraxoKg > 0 && (
-                              <div className="text-[10px] font-normal text-slate-500 mt-0.5 whitespace-nowrap">
-                                Aves: {oleoAvesKg.toLocaleString('pt-BR')} | Graxo: {oleoGraxoKg.toLocaleString('pt-BR')}
-                              </div>
-                            )}
+                            {oilKg.toLocaleString('pt-BR')}
                           </td>
                           <td className="px-3 py-2.5 text-center font-bold text-emerald-700">
                             {farinhaYield.toFixed(2)}%
@@ -822,73 +822,73 @@ export const ExecutiveDashboard: React.FC<ExecutiveDashboardProps> = ({
       {activePlan === 'manutencao' && (
         <div className="space-y-6">
 
-          {/* KPI Cards Grid */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+          {/* KPI Cards Grid (Responsivo para tablet landscape sem sobreposição) */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-3.5 sm:gap-4">
 
             {/* KPI 1: Tempo Total Parado */}
-            <div className="bg-white border border-amber-300 rounded-2xl p-5 shadow-sm">
-              <div className="text-[10px] font-bold uppercase tracking-wider text-amber-700 font-mono">
+            <div className="bg-white border border-amber-300 rounded-2xl p-4 xl:p-4 2xl:p-5 shadow-sm min-w-0 flex flex-col justify-between">
+              <div className="text-[10px] leading-tight font-bold uppercase tracking-wider text-amber-700 font-mono">
                 Tempo Total Parado
               </div>
-              <div className="mt-2 text-3xl font-black font-mono text-amber-700">
+              <div className="mt-2 text-2xl xl:text-[22px] 2xl:text-3xl font-black font-mono tabular-nums leading-tight text-amber-700">
                 {maintenanceKpis.durationFormatted}
               </div>
-              <div className="mt-2 text-[10px] text-slate-500 font-mono">
+              <div className="mt-2 text-[10px] leading-snug text-slate-500 font-mono">
                 {maintenanceKpis.totalMinutes} minutos acumulados
               </div>
             </div>
 
             {/* KPI 2: Total de Ocorrências */}
-            <div className="bg-white border border-slate-200 rounded-2xl p-5 shadow-sm">
-              <div className="text-[10px] font-bold uppercase tracking-wider text-slate-600 font-mono">
+            <div className="bg-white border border-slate-200 rounded-2xl p-4 xl:p-4 2xl:p-5 shadow-sm min-w-0 flex flex-col justify-between">
+              <div className="text-[10px] leading-tight font-bold uppercase tracking-wider text-slate-600 font-mono">
                 Total de Ocorrências
               </div>
-              <div className="mt-2 text-3xl font-black font-mono text-slate-900">
+              <div className="mt-2 text-2xl xl:text-[22px] 2xl:text-3xl font-black font-mono tabular-nums leading-tight text-slate-900">
                 {maintenanceKpis.totalOccurrences}
               </div>
-              <div className="mt-2 text-[10px] text-slate-500 font-mono">
+              <div className="mt-2 text-[10px] leading-snug text-slate-500 font-mono">
                 Registros de parada no período
               </div>
             </div>
 
             {/* KPI 3: Por Tipo de Manutenção */}
-            <div className="bg-white border border-slate-200 rounded-2xl p-5 shadow-sm space-y-2">
-              <div className="text-[10px] font-bold uppercase tracking-wider text-slate-600 font-mono">
+            <div className="bg-white border border-slate-200 rounded-2xl p-4 xl:p-4 2xl:p-5 shadow-sm min-w-0 space-y-2">
+              <div className="text-[10px] leading-tight font-bold uppercase tracking-wider text-slate-600 font-mono">
                 Distribuição por Tipo
               </div>
-              <div className="space-y-1 text-xs font-mono">
-                <div className="flex justify-between items-center text-rose-700">
+              <div className="space-y-1.5 text-[11px] 2xl:text-xs font-mono tabular-nums">
+                <div className="flex flex-wrap justify-between items-center gap-x-2 text-rose-700">
                   <span>Não planejada:</span>
-                  <span className="font-bold">{maintenanceKpis.typeCounts['Não planejada'].count}x ({formatHoursMinutes(maintenanceKpis.typeCounts['Não planejada'].minutes)})</span>
+                  <span className="font-bold whitespace-nowrap">{maintenanceKpis.typeCounts['Não planejada'].count}x ({formatHoursMinutes(maintenanceKpis.typeCounts['Não planejada'].minutes)})</span>
                 </div>
-                <div className="flex justify-between items-center text-emerald-700">
+                <div className="flex flex-wrap justify-between items-center gap-x-2 text-emerald-700">
                   <span>Planejada:</span>
-                  <span className="font-bold">{maintenanceKpis.typeCounts['Planejada'].count}x ({formatHoursMinutes(maintenanceKpis.typeCounts['Planejada'].minutes)})</span>
+                  <span className="font-bold whitespace-nowrap">{maintenanceKpis.typeCounts['Planejada'].count}x ({formatHoursMinutes(maintenanceKpis.typeCounts['Planejada'].minutes)})</span>
                 </div>
-                <div className="flex justify-between items-center text-amber-700">
+                <div className="flex flex-wrap justify-between items-center gap-x-2 text-amber-700">
                   <span>Falta de MP:</span>
-                  <span className="font-bold">{maintenanceKpis.typeCounts['Falta de MP'].count}x ({formatHoursMinutes(maintenanceKpis.typeCounts['Falta de MP'].minutes)})</span>
+                  <span className="font-bold whitespace-nowrap">{maintenanceKpis.typeCounts['Falta de MP'].count}x ({formatHoursMinutes(maintenanceKpis.typeCounts['Falta de MP'].minutes)})</span>
                 </div>
               </div>
             </div>
 
             {/* KPI 4: Por Linha de Produção */}
-            <div className="bg-white border border-slate-200 rounded-2xl p-5 shadow-sm space-y-2">
-              <div className="text-[10px] font-bold uppercase tracking-wider text-slate-600 font-mono">
+            <div className="bg-white border border-slate-200 rounded-2xl p-4 xl:p-4 2xl:p-5 shadow-sm min-w-0 space-y-2">
+              <div className="text-[10px] leading-tight font-bold uppercase tracking-wider text-slate-600 font-mono">
                 Divisão por Linha
               </div>
-              <div className="space-y-1 text-xs font-mono">
-                <div className="flex justify-between items-center text-sky-700">
+              <div className="space-y-1.5 text-[11px] 2xl:text-xs font-mono tabular-nums">
+                <div className="flex flex-wrap justify-between items-center gap-x-2 text-sky-700">
                   <span>Vísceras:</span>
-                  <span className="font-bold">{formatHoursMinutes(maintenanceKpis.lineCounts['Vísceras'].minutes)} ({maintenanceKpis.lineCounts['Vísceras'].count}x)</span>
+                  <span className="font-bold whitespace-nowrap">{formatHoursMinutes(maintenanceKpis.lineCounts['Vísceras'].minutes)} ({maintenanceKpis.lineCounts['Vísceras'].count}x)</span>
                 </div>
-                <div className="flex justify-between items-center text-teal-700">
+                <div className="flex flex-wrap justify-between items-center gap-x-2 text-teal-700">
                   <span>Penas:</span>
-                  <span className="font-bold">{formatHoursMinutes(maintenanceKpis.lineCounts['Penas'].minutes)} ({maintenanceKpis.lineCounts['Penas'].count}x)</span>
+                  <span className="font-bold whitespace-nowrap">{formatHoursMinutes(maintenanceKpis.lineCounts['Penas'].minutes)} ({maintenanceKpis.lineCounts['Penas'].count}x)</span>
                 </div>
-                <div className="flex justify-between items-center text-slate-700">
+                <div className="flex flex-wrap justify-between items-center gap-x-2 text-slate-700">
                   <span>Geral/Utilidades:</span>
-                  <span className="font-bold">{formatHoursMinutes(maintenanceKpis.lineCounts['Geral/Utilidades'].minutes)} ({maintenanceKpis.lineCounts['Geral/Utilidades'].count}x)</span>
+                  <span className="font-bold whitespace-nowrap">{formatHoursMinutes(maintenanceKpis.lineCounts['Geral/Utilidades'].minutes)} ({maintenanceKpis.lineCounts['Geral/Utilidades'].count}x)</span>
                 </div>
               </div>
             </div>
@@ -925,17 +925,17 @@ export const ExecutiveDashboard: React.FC<ExecutiveDashboardProps> = ({
 
                     return (
                       <div key={eq.name} className="p-3 bg-slate-50 rounded-xl border border-slate-200 space-y-1.5">
-                        <div className="flex items-center justify-between text-xs">
-                          <div className="flex items-center gap-2">
-                            <span className="w-5 h-5 rounded-md bg-slate-200 text-slate-700 font-mono text-[10px] flex items-center justify-center font-bold">
+                        <div className="flex flex-wrap items-center justify-between gap-2 text-xs">
+                          <div className="flex items-center gap-2 min-w-0">
+                            <span className="w-5 h-5 rounded-md bg-slate-200 text-slate-700 font-mono text-[10px] flex items-center justify-center font-bold shrink-0">
                               #{idx + 1}
                             </span>
-                            <span className="font-bold text-slate-900">{eq.name}</span>
-                            <span className="text-[10px] px-1.5 py-0.5 rounded bg-white border border-slate-200 text-slate-600 font-mono">
+                            <span className="font-bold text-slate-900 truncate">{eq.name}</span>
+                            <span className="text-[10px] px-1.5 py-0.5 rounded bg-white border border-slate-200 text-slate-600 font-mono shrink-0">
                               {eq.line}
                             </span>
                           </div>
-                          <div className="flex items-center gap-3 font-mono">
+                          <div className="flex items-center gap-3 font-mono shrink-0">
                             <span className="text-slate-500 text-[11px]">{eq.count} ocorrências</span>
                             <span className="font-bold text-amber-700">{formatHoursMinutes(eq.minutes)}</span>
                           </div>
