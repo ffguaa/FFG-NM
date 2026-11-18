@@ -399,7 +399,7 @@ export const InventoryModule: React.FC<InventoryModuleProps> = ({
   const [isExportModalOpen, setIsExportModalOpen] = useState<boolean>(false);
   const [draftExportMode, setDraftExportMode] = useState<'general' | 'byDate'>('byDate');
   const [draftExportDate, setDraftExportDate] = useState<string>('');
-  const [committedExportMode, setCommittedExportMode] = useState<'general' | 'byDate'>('byDate');
+  const [committedExportMode, setCommittedExportMode] = useState<'general' | 'byDate' | 'filtered'>('byDate');
   const [committedExportDate, setCommittedExportDate] = useState<string>('');
 
   // Map inventories grouped by inventory_date (YYYY-MM-DD) for fast Calendar lookup
@@ -831,12 +831,39 @@ export const InventoryModule: React.FC<InventoryModuleProps> = ({
     return Array.from(dateSet).sort((a, b) => b.localeCompare(a));
   }, [inventories]);
 
+  const activeFilterSummary = useMemo(() => {
+    const scopeLabel = selectedInventory
+      ? `Inventário ${formatDateDDMMYYYY(selectedInventory.inventory_date)} (${normalizeProductType(selectedInventory.flour_type)})`
+      : selectedCalendarDate
+      ? `Data ${formatDateDDMMYYYY(selectedCalendarDate)}`
+      : 'Consulta Geral do Estoque';
+    const parts = [
+      scopeLabel,
+      `Produto: ${bagProductFilter}`,
+      `Classificação: ${bagClassFilter}`,
+      `Status: ${bagBlockFilter}`,
+    ];
+    if (bagSearch.trim()) {
+      parts.push(`Busca: "${bagSearch.trim()}"`);
+    }
+    return parts.join(' • ');
+  }, [
+    selectedInventory,
+    selectedCalendarDate,
+    bagProductFilter,
+    bagClassFilter,
+    bagBlockFilter,
+    bagSearch,
+  ]);
+
   // Consolidated dataset used specifically for the hidden Landscape PDF Print Layout
   const printReportData = useMemo(() => {
     const targetDate = committedExportDate || activeSummaryDate;
     let sourceBags: FfgInventoryBag[] = [];
 
-    if (committedExportMode === 'general') {
+    if (committedExportMode === 'filtered') {
+      sourceBags = filteredActiveBags;
+    } else if (committedExportMode === 'general') {
       sourceBags = inventoryBags.filter((b) => !b.is_dispatched);
     } else {
       const sameDayInvIds = new Set(
@@ -932,6 +959,7 @@ export const InventoryModule: React.FC<InventoryModuleProps> = ({
             )
           : [],
       dayInventoryCount: dateInventories.length,
+      filterSummary: activeFilterSummary,
     };
   }, [
     committedExportMode,
@@ -940,6 +968,8 @@ export const InventoryModule: React.FC<InventoryModuleProps> = ({
     inventories,
     inventoryBags,
     inventoryMap,
+    filteredActiveBags,
+    activeFilterSummary,
   ]);
 
   const handleOpenExportModal = () => {
@@ -960,6 +990,19 @@ export const InventoryModule: React.FC<InventoryModuleProps> = ({
     setCommittedExportDate(draftExportDate || activeSummaryDate);
     setIsExportModalOpen(false);
     setTimeout(() => window.print(), 500);
+  };
+
+  const handleExportFilteredPdf = () => {
+    if (filteredActiveBags.length === 0) {
+      showToast(
+        'warning',
+        'Nenhum Item Filtrado',
+        'Não há bags ou tanques correspondentes aos filtros atuais para exportar.'
+      );
+      return;
+    }
+    setCommittedExportMode('filtered');
+    setTimeout(() => window.print(), 250);
   };
 
   // Active stock bags (excluding dispatched bags)
@@ -2263,8 +2306,15 @@ export const InventoryModule: React.FC<InventoryModuleProps> = ({
           <h1 className="text-base font-black text-slate-900 uppercase tracking-tight">
             {printReportData.mode === 'general'
               ? 'Relatório Consolidado — Estoque Geral'
+              : printReportData.mode === 'filtered'
+              ? 'Relatório de Estoque Filtrado — Consulta da Sessão'
               : `Relatório Consolidado de Inventário — ${formatDateDDMMYYYY(printReportData.targetDate)}`}
           </h1>
+          {printReportData.mode === 'filtered' && (
+            <div className="text-[10px] font-mono text-slate-700 mt-0.5">
+              Filtros aplicados: {printReportData.filterSummary}
+            </div>
+          )}
         </div>
         <div className="text-right text-[10px] font-mono text-slate-700">
           <div>
@@ -2289,7 +2339,7 @@ export const InventoryModule: React.FC<InventoryModuleProps> = ({
         {/* Resumo do Dia — exclusivo para impressão PDF quando modo = byDate */}
         <div
           className={`hidden ${
-            printReportData.mode === 'general' ? 'print:hidden' : 'print:block'
+            printReportData.mode === 'byDate' ? 'print:block' : 'print:hidden'
           } space-y-2.5`}
         >
           <div className="flex items-center justify-between px-1">
@@ -2404,8 +2454,12 @@ export const InventoryModule: React.FC<InventoryModuleProps> = ({
           </div>
         </div>
 
-        {/* 1. Resumo Geral do Estoque Consolidado (exibido imediatamente ao abrir a aba) */}
-        <div className="bg-white border border-amber-200 print:border-slate-400 rounded-2xl p-5 print:p-3 shadow-sm print:shadow-none space-y-4">
+        {/* 1. Resumo Geral do Estoque Consolidado (oculto na impressão filtrada para exibir apenas os itens da sessão) */}
+        <div
+          className={`bg-white border border-amber-200 print:border-slate-400 rounded-2xl p-5 print:p-3 shadow-sm print:shadow-none space-y-4 ${
+            printReportData.mode === 'filtered' ? 'print:hidden' : ''
+          }`}
+        >
           <div className="flex items-center gap-2 text-amber-800 font-bold text-xs tracking-wider uppercase font-mono">
             <Package className="w-4 h-4 text-amber-600" />
             <span>
@@ -3871,6 +3925,15 @@ export const InventoryModule: React.FC<InventoryModuleProps> = ({
                     <span>Limpar Filtros</span>
                   </button>
                 )}
+                <button
+                  type="button"
+                  onClick={handleExportFilteredPdf}
+                  className="px-3.5 py-2 bg-slate-800 hover:bg-slate-900 text-white rounded-xl text-xs font-bold flex items-center gap-1.5 shadow-sm transition-colors"
+                  title="Exportar em PDF apenas os itens filtrados nesta sessão"
+                >
+                  <Printer className="w-3.5 h-3.5" />
+                  <span>Exportar PDF ({filteredActiveBags.length})</span>
+                </button>
               </div>
             </div>
 
@@ -4528,6 +4591,8 @@ export const InventoryModule: React.FC<InventoryModuleProps> = ({
                             {groupProduct}{' '}
                             {printReportData.mode === 'byDate'
                               ? `— ${formatDateDDMMYYYY(printReportData.targetDate)}`
+                              : printReportData.mode === 'filtered'
+                              ? '— Seleção Filtrada'
                               : '— Estoque Geral'}
                           </h3>
                           {groupInventories.length > 0 && (
